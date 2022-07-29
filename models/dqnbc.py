@@ -1,6 +1,7 @@
 import copy
 import torch
 import torch.nn as nn
+from torch.distributions.categorical import Categorical
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -25,7 +26,7 @@ class QNetwork(nn.Module):
         q_values = self.out_layer(x)
         return q_values
 
-class DQNAgent:
+class DQNBCAgent:
     def __init__(self, in_channels, act_dim, args, device):
         self.act_dim = act_dim
         self.qnet = QNetwork(in_channels, act_dim).to(device)
@@ -42,12 +43,20 @@ class DQNAgent:
         return action
 
     def loss_fn(self, batch):
-        Qs = self.qnet(batch.observations)  # (256, 4, 10, 10)
+        Qs = self.qnet(batch.observations)  # (256, 4, 10, 10) ==> (256, 6)
+
+        # td loss
         Q = torch.gather(Qs, dim=1, index=batch.actions).squeeze()  # (256,)
         with torch.no_grad():
             next_Q = self.target_qnet(batch.next_observations).max(dim=1)[0]  # (256)
         target_Q = batch.rewards + self.gamma * batch.discounts * next_Q
         td_loss = torch.square(Q - target_Q)
+
+        # mle loss
+        probs = torch.softmax(Qs, dim=1)
+        distributions = Categorical(probs=probs)
+        log_probs = distributions.log_prob(batch.actions)
+        total_loss = td_loss.mean()-log_probs.mean()
         log_info = {
             "avg_Q": Q.mean().item(),
             "max_Q": Q.max().item(),
@@ -58,8 +67,11 @@ class DQNAgent:
             "avg_td_loss": td_loss.mean().item(),
             "max_td_loss": td_loss.max().item(),
             "min_td_loss": td_loss.min().item(),
+            "avg_logp": log_probs.mean().item(),
+            "max_logp": log_probs.max().item(),
+            "min_logp": log_probs.min().item(),
         }
-        return td_loss.mean(), log_info
+        return total_loss, log_info
 
     def update(self, batch):
         self.step += 1

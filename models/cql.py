@@ -25,7 +25,8 @@ class QNetwork(nn.Module):
         q_values = self.out_layer(x)
         return q_values
 
-class DQNAgent:
+
+class CQLAgent:
     def __init__(self, in_channels, act_dim, args, device):
         self.act_dim = act_dim
         self.qnet = QNetwork(in_channels, act_dim).to(device)
@@ -35,6 +36,7 @@ class DQNAgent:
         self.gamma = args.gamma
         self.device = device
         self.update_step = args.update_step
+        self.cql_alpha = args.cql_alpha
 
     def sample_action(self, obs):
         Qs = self.qnet(torch.tensor(obs[None]).to(self.device))
@@ -42,10 +44,11 @@ class DQNAgent:
         return action
 
     def loss_fn(self, batch):
-        Qs = self.qnet(batch.observations)  # (256, 4, 10, 10)
+        Qs = self.qnet(batch.observations)  # (256, 4, 10, 10) ==> (256, 6)
         Q = torch.gather(Qs, dim=1, index=batch.actions).squeeze()  # (256,)
         with torch.no_grad():
             next_Q = self.target_qnet(batch.next_observations).max(dim=1)[0]  # (256)
+        cql_loss = (torch.logsumexp(Qs, dim=1) - Q) * self.cql_alpha
         target_Q = batch.rewards + self.gamma * batch.discounts * next_Q
         td_loss = torch.square(Q - target_Q)
         log_info = {
@@ -58,8 +61,12 @@ class DQNAgent:
             "avg_td_loss": td_loss.mean().item(),
             "max_td_loss": td_loss.max().item(),
             "min_td_loss": td_loss.min().item(),
+            "avg_cql_loss": cql_loss.mean().item(),
+            "max_cql_loss": cql_loss.max().item(),
+            "min_cql_loss": cql_loss.min().item(),
         }
-        return td_loss.mean(), log_info
+        total_loss = td_loss.mean() + cql_loss.mean()
+        return total_loss, log_info
 
     def update(self, batch):
         self.step += 1

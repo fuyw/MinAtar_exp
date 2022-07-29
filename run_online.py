@@ -5,10 +5,8 @@ import pandas as pd
 import os
 import torch
 from tqdm import trange
-from models.dqn import DQNAgent
+from models import DQNAgent
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-ALGOS = {"dqn": DQNAgent}
 
 
 def eval_policy(agent: DQNAgent,
@@ -35,6 +33,7 @@ def get_args():
     parser.add_argument("--algo", type=str, default="dqn")
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=2.5e-4)
+    parser.add_argument("--update_step", type=int, default=4)
     parser.add_argument("--warmup_timesteps", type=int, default=5000)
     parser.add_argument("--total_timesteps", type=int, default=int(1e6))
     parser.add_argument("--eval_freq", type=int, default=int(1e4))
@@ -50,6 +49,7 @@ def get_args():
 def run(args):
     print(f"Start to play {args.env_name}")
     np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
 
     # initialize MinAtar environment
     env = MinAtarEnv(args.env_name)
@@ -58,11 +58,7 @@ def run(args):
     act_dim = env.action_space.n       # 6
 
     # initialize DQN agent
-    agent = ALGOS[args.algo](in_channels=in_channels,
-                             act_dim=act_dim,
-                             lr=args.lr,
-                             gamma=args.gamma,
-                             device=device)
+    agent = DQNAgent(in_channels, act_dim, args, device)
 
     # initialize the replay buffer
     replay_buffer = ReplayBuffer(obs_shape, args.buffer_size)
@@ -117,7 +113,8 @@ def run(args):
 
 if __name__ == "__main__":
     args = get_args()
-    for env_name in ["breakout", "asterix", "freeway", "space_invaders"]:
+    # for env_name in ["breakout", "asterix", "freeway", "space_invaders"]:
+    for env_name in ["breakout"]:
         args.env_name = env_name
         os.makedirs(f"saved_models/{args.env_name}/{args.algo}", exist_ok=True)
         os.makedirs(f"logs/{args.env_name}/{args.algo}", exist_ok=True)
