@@ -2,7 +2,7 @@ from typing import List
 import torch
 import collections
 import numpy as np
-device = torch.device("mps")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 Batch = collections.namedtuple(
@@ -13,7 +13,6 @@ Batch = collections.namedtuple(
 class ReplayBuffer:
     def __init__(self,
                  obs_shape: List[int],
-                 act_dim: int,
                  max_size: int = int(5e4)):
         self.max_size = max_size
         self.ptr = 0
@@ -48,3 +47,9 @@ class ReplayBuffer:
                           self.next_observations[idx]).to(device))
         return batch
 
+    def save(self, fname: str):
+        np.savez(fname,
+                 observations=self.observations[:self.size],
+                 actions=self.actions[:self.size],
+                 rewards=self.rewards[:self.size],
+                 discounts=self.discounts[:self.size])
