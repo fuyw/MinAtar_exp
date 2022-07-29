@@ -33,8 +33,8 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--env_name", type=str, default="breakout")
     parser.add_argument("--algo", type=str, default="dqn")
-    parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--lr", type=float, default=3e-4)
+    parser.add_argument("--batch_size", type=int, default=256)
+    parser.add_argument("--lr", type=float, default=2.5e-4)
     parser.add_argument("--warmup_timesteps", type=int, default=5000)
     parser.add_argument("--total_timesteps", type=int, default=int(1e6))
     parser.add_argument("--eval_freq", type=int, default=int(1e4))
@@ -73,13 +73,16 @@ def run(args):
     res = []
     for t in trange(1, args.total_timesteps+1):
         # warmup
-        epsilon = linear_schedule(start_epsilon=1., end_epsilon=0.1, duration=args.total_timesteps)
-        if t <= args.warmup_timesteps or np.random.random() < epsilon:
+        epsilon = linear_schedule(start_epsilon=1., end_epsilon=0.1, duration=args.total_timesteps, t=t)
+        if t <= args.warmup_timesteps:
             action = np.random.choice(act_dim)
         else:
-            action = agent.sample_action(obs)
+            if np.random.random() < epsilon:
+                action = np.random.choice(act_dim)
+            else:
+                action = agent.sample_action(obs)
             # update the agent
-            if t % args.train_frq == 0:
+            if t % args.train_freq == 0:
                 batch = replay_buffer.sample(batch_size=args.batch_size)
                 log_info = agent.update(batch)
 
@@ -102,16 +105,11 @@ def run(args):
             ep_num += 1
             if ep_num % 100 == 0:
                 print(f"Episode {ep_num}: step={ep_step}, reward={ep_reward}, buffer_size={replay_buffer.size/1000:.1f}K")
-                if t > args.warmup_timesteps:
-                    print(f"\tavg_td_loss: {log_info['avg_td_loss']:.3f}, max_td_loss: {log_info['max_td_loss']:.3f}, "
-                          f"min_td_loss: {log_info['min_td_loss']:.3f}\n"
-                          f"\tavg_Q: {log_info['avg_Q']:.3f}, max_Q: {log_info['max_Q']:.3f}, "
-                          f"min_Q: {log_info['min_Q']:.3f}\n")
             ep_reward, ep_step = 0, 0
 
     # save logs
     df = pd.DataFrame(res).set_index("step")
-    df.to_csv(f"logs/{args.env_name}/s{args.seed}.csv")
+    df.to_csv(f"logs/{args.env_name}/{args.algo}/s{args.seed}.csv")
 
     # save replay buffer
     replay_buffer.save(f"datasets/{args.env_name}")
@@ -119,7 +117,9 @@ def run(args):
 
 if __name__ == "__main__":
     args = get_args()
-    os.makedirs(f"saved_models/{args.env_name}/{args.algo}", exist_ok=True)
-    os.makedirs(f"logs/{args.env_name}/{args.algo}", exist_ok=True)
-    os.makedirs(f"datasets", exist_ok=True)
-    run(args)
+    for env_name in ["breakout", "asterix", "freeway", "space_invaders"]:
+        args.env_name = env_name
+        os.makedirs(f"saved_models/{args.env_name}/{args.algo}", exist_ok=True)
+        os.makedirs(f"logs/{args.env_name}/{args.algo}", exist_ok=True)
+        os.makedirs(f"datasets", exist_ok=True)
+        run(args)
