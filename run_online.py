@@ -41,12 +41,12 @@ def get_args():
     parser.add_argument("--env_name", type=str, default="breakout")
     parser.add_argument("--algo", type=str, default="dqn")
     parser.add_argument("--batch_size", type=int, default=64)
-    parser.add_argument("--lr", type=float, default=2.5e-4)
+    parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--update_step", type=int, default=4)
     parser.add_argument("--warmup_timesteps", type=int, default=5000)
     parser.add_argument("--total_timesteps", type=int, default=int(1e6))
     parser.add_argument("--eval_freq", type=int, default=int(1e4))
-    parser.add_argument("--ckpt_freq", type=int, default=int(1e5)) 
+    parser.add_argument("--ckpt_freq", type=int, default=int(5e4)) 
     parser.add_argument("--tau", type=float, default=0.05)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--seed", type=int, default=0)
@@ -122,7 +122,7 @@ def run(args):
 
     # save logs
     df = pd.DataFrame(res).set_index("step")
-    df.to_csv(f"logs/online/{args.env_name}/{args.exp_name}.csv")
+    df.to_csv(f"logs/online/{args.env_name}/{exp_name}.csv")
 
     # save replay buffer
     replay_buffer.save(f"datasets/{args.env_name}")
