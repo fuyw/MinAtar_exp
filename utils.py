@@ -53,3 +53,8 @@ class ReplayBuffer:
                  actions=self.actions[:self.size],
                  rewards=self.rewards[:self.size],
                  discounts=self.discounts[:self.size])
+
+
+def linear_schedule(start_epsilon: float, end_epsilon: float, duration: int, t: int):
+    slope = (end_epsilon - start_epsilon) / duration
+    return max(slope * t + start_epsilon, end_epsilon)

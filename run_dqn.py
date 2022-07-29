@@ -1,4 +1,4 @@
-from utils import ReplayBuffer
+from utils import ReplayBuffer, linear_schedule
 from env_utils import MinAtarEnv
 import numpy as np
 import pandas as pd
@@ -39,8 +39,8 @@ def get_args():
     parser.add_argument("--total_timesteps", type=int, default=int(1e6))
     parser.add_argument("--eval_freq", type=int, default=int(1e4))
     parser.add_argument("--ckpt_freq", type=int, default=int(1e5))
+    parser.add_argument("--train_freq", type=int, default=4)
     parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--tau", type=float, default=0.005)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--buffer_size", type=int, default=int(1e6))
     args = parser.parse_args()
@@ -62,7 +62,6 @@ def run(args):
                              act_dim=act_dim,
                              lr=args.lr,
                              gamma=args.gamma,
-                             tau=args.tau,
                              device=device)
 
     # initialize the replay buffer
@@ -74,13 +73,15 @@ def run(args):
     res = []
     for t in trange(1, args.total_timesteps+1):
         # warmup
-        if t <= args.warmup_timesteps:
+        epsilon = linear_schedule(start_epsilon=1., end_epsilon=0.1, duration=args.total_timesteps)
+        if t <= args.warmup_timesteps or np.random.random() < epsilon:
             action = np.random.choice(act_dim)
         else:
             action = agent.sample_action(obs)
             # update the agent
-            batch = replay_buffer.sample(batch_size=args.batch_size)
-            log_info = agent.update(batch)
+            if t % args.train_frq == 0:
+                batch = replay_buffer.sample(batch_size=args.batch_size)
+                log_info = agent.update(batch)
 
         next_obs, reward, done, _ = env.step(action)
         replay_buffer.add(obs, action, next_obs, reward, done)
@@ -94,7 +95,7 @@ def run(args):
             log_info.update({"step": t, "eval_reward": eval_reward})
             res.append(log_info)
             if t % args.ckpt_freq == 0:
-                agent.save(f"saved_models/{args.env_name}/dqn_{t // args.ckpt_freq}.ckpt")
+                agent.save(f"saved_models/{args.env_name}/{args.algo}/{t//args.ckpt_freq}.ckpt")
 
         if done:
             obs = env.reset()
@@ -113,11 +114,12 @@ def run(args):
     df.to_csv(f"logs/{args.env_name}/s{args.seed}.csv")
 
     # save replay buffer
-    replay_buffer.save(f"offline_buffers/{args.env_name}")
+    replay_buffer.save(f"datasets/{args.env_name}")
 
 
 if __name__ == "__main__":
     args = get_args()
+    os.makedirs(f"saved_models/{args.env_name}/{args.algo}", exist_ok=True)
     os.makedirs(f"logs/{args.env_name}/{args.algo}", exist_ok=True)
-    os.makedirs(f"datasets/{args.env_name}/{args.algo}", exist_ok=True)
+    os.makedirs(f"datasets", exist_ok=True)
     run(args)

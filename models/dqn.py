@@ -31,7 +31,6 @@ class DQNAgent:
                  act_dim: int = 6,
                  lr: float = 3e-4,
                  gamma: float = 0.99,
-                 tau: float = 0.05,
                  update_step: int = 4,
                  device: torch.device = device):
         self.act_dim = act_dim
@@ -40,7 +39,6 @@ class DQNAgent:
         self.optimizer = torch.optim.Adam(self.qnet.parameters(), lr=lr)
         self.update_step = 0
         self.gamma = gamma
-        self.tau = tau
         self.device = device
         self.step = 0
         self.update_step = update_step
