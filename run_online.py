@@ -57,7 +57,7 @@ def get_args():
 def run(args):
     print(f"Start to play {args.env_name}")
     start_time = time.time()
-    exp_name = f"{args.algo}_s{args.seed}"
+    exp_name = f"{args.algo}_s{args.seed}_b{args.batch_size}"
     logger = get_logger(f"logs/online/{args.env_name}/{exp_name}.log")
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -109,7 +109,7 @@ def run(args):
                 f"min_target_Q: {log_info['min_target_Q']:.3f}\n"
                 f"\tavg_batch_rewards: {batch.rewards.mean():.3f}, max_batch_rewards: {batch.rewards.max():.3f}, "
                 f"min_batch_rewards: {batch.rewards.min():.3f}\n"
-                f"\tact_counts: ({act_counts})\n"
+                f"\tact_counts: ({act_counts}), epsilon: {epsilon:.3f}\n"
             )
             log_info.update({"step": t, "eval_reward": eval_reward})
             res.append(log_info)
@@ -129,8 +129,8 @@ def run(args):
 
 if __name__ == "__main__":
     args = get_args()
-    for env_name in ["breakout", "asterix", "freeway", "space_invaders", "seaquest"]:
-    # for env_name in ["breakout"]:
+    # for env_name in ["breakout", "asterix", "freeway", "space_invaders", "seaquest"]:
+    for env_name in ["asterix", "breakout"]:
         args.env_name = env_name
         os.makedirs(f"saved_models/online/{args.env_name}/{args.algo}", exist_ok=True)
         os.makedirs(f"logs/online/{args.env_name}", exist_ok=True)

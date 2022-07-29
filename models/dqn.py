@@ -1,6 +1,7 @@
 import copy
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -50,7 +51,8 @@ class DQNAgent:
         with torch.no_grad():
             next_Q = self.target_qnet(batch.next_observations).max(dim=1)[0]  # (256)
         target_Q = batch.rewards + self.gamma * batch.discounts * next_Q
-        td_loss = torch.square(Q - target_Q)
+        td_loss = F.smooth_l1_loss(Q, target_Q, reduction="none")
+        # td_loss = torch.square(Q - target_Q)
         log_info = {
             "avg_Q": Q.mean().item(),
             "max_Q": Q.max().item(),
