@@ -21,6 +21,8 @@ class QNetwork(nn.Module):
         self.out_layer = nn.Linear(in_features=128, out_features=act_num)
 
     def forward(self, observations):
+        # normalize the observations
+        observations = (observations - 0.5) / 0.5
         x = self.net(observations)
         q_values = self.out_layer(x)
         return q_values

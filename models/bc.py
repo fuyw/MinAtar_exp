@@ -22,6 +22,8 @@ class BCNetwork(nn.Module):
         self.out_layer = nn.Linear(in_features=128, out_features=act_num)
 
     def forward(self, observations):
+        # normalize the observations
+        observations = (observations - 0.5) / 0.5
         x = self.net(observations)
         logits = self.out_layer(x)
         distributions = Categorical(logits=logits)
