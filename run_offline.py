@@ -5,13 +5,15 @@ import pandas as pd
 import os
 import torch
 from tqdm import trange
-from models import BCAgent, DQNAgent, CQLAgent
+from models import BCAgent, CQLAgent, DQNAgent, DQNBCAgent
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 ALGOS = {
     "bc": BCAgent,
-    "dqn": DQNAgent
+    "cql": CQLAgent,
+    "dqn": DQNAgent,
+    "dqnbc": DQNBCAgent,
 }
 
 
@@ -68,31 +70,13 @@ def run(args):
 
     # initialize the replay buffer
     replay_buffer = ReplayBuffer(obs_shape, args.buffer_size)
+    replay_buffer.load()
 
-    # start training
-    obs, done = env.reset(), False    # (4, 10, 10)
-    ep_reward, ep_step, ep_num = 0, 0, 0
     res = []
+    # start training
     for t in trange(1, args.total_timesteps+1):
-        # warmup
-        epsilon = linear_schedule(start_epsilon=1., end_epsilon=0.1, duration=args.total_timesteps, t=t)
-        if t <= args.warmup_timesteps:
-            action = np.random.choice(act_dim)
-        else:
-            if np.random.random() < epsilon:
-                action = np.random.choice(act_dim)
-            else:
-                action = agent.sample_action(obs)
-            # update the agent
-            if t % args.train_freq == 0:
-                batch = replay_buffer.sample(batch_size=args.batch_size)
-                log_info = agent.update(batch)
-
-        next_obs, reward, done, _ = env.step(action)
-        replay_buffer.add(obs, action, next_obs, reward, done)
-        obs = next_obs
-        ep_reward += reward
-        ep_step += 1
+        batch = replay_buffer.sample(batch_size=args.batch_size)
+        log_info = agent.update(batch)
 
         if t % args.eval_freq == 0:
             eval_reward = eval_policy(agent, args.env_name)
@@ -101,13 +85,6 @@ def run(args):
             res.append(log_info)
             if t % args.ckpt_freq == 0:
                 agent.save(f"saved_models/{args.env_name}/{args.algo}/{t//args.ckpt_freq}.ckpt")
-
-        if done:
-            obs = env.reset()
-            ep_num += 1
-            if ep_num % 100 == 0:
-                print(f"Episode {ep_num}: step={ep_step}, reward={ep_reward}, buffer_size={replay_buffer.size/1000:.1f}K")
-            ep_reward, ep_step = 0, 0
 
     # save logs
     df = pd.DataFrame(res).set_index("step")
