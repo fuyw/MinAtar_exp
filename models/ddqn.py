@@ -25,7 +25,7 @@ class QNetwork(nn.Module):
         q_values = self.out_layer(x)
         return q_values
 
-class DQNAgent:
+class DDQNAgent:
     def __init__(self, in_channels, act_dim, args, device):
         self.act_dim = act_dim
         self.qnet = QNetwork(in_channels, act_dim).to(device)
@@ -33,7 +33,6 @@ class DQNAgent:
         self.optimizer = torch.optim.Adam(self.qnet.parameters(), lr=args.lr)
         self.step = 0
         self.gamma = args.gamma
-        self.tau = args.tau
         self.device = device
         self.update_step = args.update_step
 
@@ -46,7 +45,10 @@ class DQNAgent:
         Qs = self.qnet(batch.observations)  # (256, 4, 10, 10)
         Q = torch.gather(Qs, dim=1, index=batch.actions).squeeze()  # (256,)
         with torch.no_grad():
-            next_Q = self.target_qnet(batch.next_observations).max(dim=1)[0]  # (256)
+            next_Qs = self.qnet(batch.next_observations)  # (256, 6)
+            next_actions = next_Qs.argmax(-1, keepdims=True)  # (256, 1)
+            target_next_Qs = self.target_qnet(batch.next_observations)  # (256, 6)
+            next_Q = torch.gather(target_next_Qs, dim=1, index=next_actions).squeeze()  # (256,)
         target_Q = batch.rewards + self.gamma * batch.discounts * next_Q
         td_loss = torch.square(Q - target_Q)
         log_info = {
@@ -68,13 +70,10 @@ class DQNAgent:
         loss, log_info = self.loss_fn(batch)
         loss.backward()
         self.optimizer.step()
-        # if self.step % self.update_step == 0:
-        #     for param, target_param in zip(self.qnet.parameters(),
-        #             self.target_qnet.parameters()):
-        #         target_param.data.copy_(param.data)
-
-        for param, target_param in zip(self.qnet.parameters(), self.target_qnet.parameters()):
-            target_param.data.copy_(self.tau*param.data + (1.-self.tau)*target_param)
+        if self.step % self.update_step == 0:
+            for param, target_param in zip(self.qnet.parameters(),
+                    self.target_qnet.parameters()):
+                target_param.data.copy_(param.data)
         return log_info
 
     def save(self, fname):

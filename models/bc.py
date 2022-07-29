@@ -19,7 +19,7 @@ class BCNetwork(nn.Module):
             nn.Linear(in_features=1024, out_features=128),
             nn.ReLU(),
         )
-        self.out_layer = nn.Linear(in_features=128, out_features=act_num),
+        self.out_layer = nn.Linear(in_features=128, out_features=act_num)
 
     def forward(self, observations):
         x = self.net(observations)
