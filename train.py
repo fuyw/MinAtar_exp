@@ -1,4 +1,6 @@
 import os
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = ".3"
+
 import gym
 import time
 import numpy as np
@@ -41,7 +43,6 @@ def run(args):
     env = wrap_deepmind(env, dim=IMAGE_SIZE[0], framestack=False, obs_format="NCHW")
     eval_env = gym.make(args.env_name)
     eval_env = wrap_deepmind(eval_env, dim=IMAGE_SIZE[0], obs_format="NCHW", test=True)
-
     replay_buffer = ReplayBuffer(max_size=int(1e6))
     act_dim = env.action_space.n
     agent = DQNAgent(act_dim=act_dim)
@@ -62,12 +63,17 @@ def run(args):
             else:
                 context = replay_buffer.recent_obs()
                 context.append(obs)
-                context = np.stack(context, axis=-1)      # (84, 84, 4)
-                action = agent.sample_action(
-                    agent.state.params, context).item()
+                context = np.stack(context, axis=-1)  # (84, 84, 4)
+                action = agent.sample_action(agent.state.params, context).item()
+
+        # (84, 84), 0.0, False
         next_obs, reward, done, _ = env.step(action)
         replay_buffer.add(Experience(obs, action, reward, done))
         obs = next_obs
+
+        # reset env
+        if done:
+            obs = env.reset()
 
         # update the agent
         if t > args.warmup_timesteps:
@@ -84,7 +90,8 @@ def run(args):
                 f"\tavg_loss: {log_info['loss']:.3f}, max_loss: {log_info['max_loss']:.3f}, "
                 f"min_loss: {log_info['min_loss']:.3f}\n"
                 f"\tavg_Q: {log_info['Q']:.3f}, max_Q: {log_info['max_Q']:.3f}, "
-                f"min_Q: {log_info['min_Q']:.3f}\n"
+                f"min_Q: {log_info['min_Q']:.3f}, "
+                f"\tavg_batch_discounts: {batch.discounts.mean():.3f}\n"
                 f"\tavg_target_Q: {log_info['target_Q']:.3f}, max_target_Q: {log_info['max_target_Q']:.3f}, "
                 f"min_target_Q: {log_info['min_target_Q']:.3f}\n"
                 f"\tavg_batch_rewards: {batch.rewards.mean():.3f}, max_batch_rewards: {batch.rewards.max():.3f}, "
@@ -107,9 +114,9 @@ def get_args():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--env_name", default="PongNoFrameskip-v4")
-    parser.add_argument("--warmup_timesteps", type=int, default=int(5e4))
-    parser.add_argument("--total_timesteps", type=int, default=int(1e7))
-    parser.add_argument("--eval_freq", type=int, default=int(1e5))
+    parser.add_argument("--warmup_timesteps", type=int, default=int(5e3))
+    parser.add_argument("--total_timesteps", type=int, default=int(1e6))
+    parser.add_argument("--eval_num", type=int, default=100)
     parser.add_argument("--buffer_size", type=int, default=int(1e6))
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--context_len", type=int, default=4)
@@ -124,4 +131,5 @@ if __name__ == "__main__":
     os.makedirs("logs", exist_ok=True)
     os.makedirs("ckpts", exist_ok=True)
     args = get_args()
+    args.eval_freq = args.total_timesteps // args.eval_num
     run(args)

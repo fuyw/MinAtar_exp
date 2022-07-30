@@ -6,7 +6,7 @@ import functools
 import jax
 import jax.numpy as jnp
 import optax
-from utils import Batch
+from utils import Batch, target_update
 
 
 class QNetwork(nn.Module):
@@ -92,11 +92,12 @@ class DQNAgent:
         log_info = jax.tree_util.tree_map(functools.partial(jnp.mean, axis=0), log_info)
         log_info.update(extra_info)
         new_state = state.apply_gradients(grads=grads)
-        return new_state, log_info
+        new_target_params = target_update(new_state.params, target_params, self.tau)
+        return new_state, new_target_params, log_info
 
     def update(self, batch: Batch):
-        self.state, log_info = self.train_step(batch, self.state, self.target_params)
-        self.target_params = self.state.params
+        self.state, self.target_params, log_info = self.train_step(batch, self.state, self.target_params)
+        # self.target_params = self.state.params
         return log_info
 
     def save(self, fname: str, cnt: int):

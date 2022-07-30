@@ -1,7 +1,6 @@
 from flax.core import FrozenDict
 import jax
 import logging
-import functools
 import numpy as np
 from collections import deque, namedtuple
 
@@ -109,7 +108,15 @@ class ReplayBuffer:
                      action,
                      reward,
                      obs[:, :, :, 1:],
-                     1.0 - done)
+                     1.-done)
+
+    def save(self, fname):
+        np.savez(fname,
+                 observations=self.obs,
+                 actions=self.action,
+                 rewards=self.reward,
+                 done=self.done,
+                 ptr=self._curr_size)
 
 
 # Exploration linear decay
@@ -128,3 +135,10 @@ def get_logger(fname):
                         force=True)
     logger = logging.getLogger()
     return logger
+
+
+def target_update(params: FrozenDict, target_params: FrozenDict, tau: float) -> FrozenDict:
+    def _update(param: FrozenDict, target_param: FrozenDict):
+        return tau*param + (1-tau)*target_param
+    updated_params = jax.tree_util.tree_map(_update, params, target_params)
+    return updated_params

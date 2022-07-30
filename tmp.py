@@ -1,19 +1,14 @@
-from typing import Tuple
-import numpy as np
-import functools
-import optax
+import os
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = ".3"
+
 import gym
-import functools
-import jax
-import jax.numpy as jnp
-from flax import linen as nn
-from flax.core import FrozenDict
-from flax.training import train_state
-from utils import ReplayBuffer, Experience, Batch
+import time
+import numpy as np
+import pandas as pd
+from tqdm import trange
 from atari_wrappers import wrap_deepmind
+from utils import ReplayBuffer, Experience, get_logger, linear_schedule
 from models import DQNAgent
-
-
 IMAGE_SIZE=(84,84)
 
 
@@ -29,6 +24,7 @@ def get_args():
 args = get_args()
 env = gym.make(args.env)
 env = wrap_deepmind(env, dim=IMAGE_SIZE[0], framestack=False, obs_format="NCHW")
+
 act_dim = env.action_space.n
 
 agent = DQNAgent(act_dim=act_dim)
@@ -52,11 +48,6 @@ while not done:
     obs = next_obs
 
 
-# batch.observations.shape = (256, 84, 84, 4)
-# batch.actions = (256,)
-# batch.rewards = (256,)
-# batch.next_observations = (256, 84, 84, 4)
-# batch.discounts = (256,)
 batch = replay_buffer.sample_batch(256)
-log_info = agent.update(batch)
+batch.observations
 # grads, log_info = agent.train_step(batch, agent.state, agent.target_params)
