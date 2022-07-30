@@ -10,42 +10,6 @@ from models import DQNAgent
 
 # env params
 IMAGE_SIZE = (84, 84)
-CONTEXT_LEN = 4
-
-# train an episode
-def run_train_episode(agent, env, rpm):
-    total_reward = 0
-    obs = env.reset()  # (84, 84)
-    step = 0
-    loss_lst = []
-
-    while True:
-        step += 1
-        context = rpm.recent_obs()  # List of last three (84, 84)
-        context.append(obs)
-        context = np.stack(context, axis=0)  # (4, 84, 84)
-
-        action = agent.sample(context)
-        next_obs, reward, done, _ = env.step(action)
-        rpm.add(Experience(obs, action, reward, done))
-
-        # train model
-        if (rpm.size() > MEMORY_WARMUP_SIZE) and (step % UPDATE_FREQ == 0):
-            # s,a,r,s",done
-            (batch_all_obs, batch_action, batch_reward,
-             batch_done) = rpm.sample_batch(BATCH_SIZE)
-            batch_obs = batch_all_obs[:, :CONTEXT_LEN, :, :]
-            batch_next_obs = batch_all_obs[:, 1:, :, :]
-
-            train_loss = agent.learn(batch_obs, batch_action, batch_reward,
-                                     batch_next_obs, batch_done)
-            loss_lst.append(train_loss)
-
-        total_reward += reward
-        obs = next_obs
-        if done:
-            break
-    return total_reward, step, np.mean(loss_lst)
 
 
 def eval_policy(agent, env, eval_episodes=10):

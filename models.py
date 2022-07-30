@@ -1,4 +1,4 @@
-from typing import Any, Callable, Sequence, Tuple
+from typing import Tuple
 from flax import linen as nn
 from flax.core import FrozenDict
 from flax.training import train_state, checkpoints
@@ -6,7 +6,7 @@ import functools
 import jax
 import jax.numpy as jnp
 import optax
-from utils import target_update, Batch
+from utils import Batch
 
 
 class QNetwork(nn.Module):
@@ -88,15 +88,15 @@ class DQNAgent:
             "max_Q": log_info["Q"].max(), "min_Q": log_info["Q"].min(),
             "max_target_Q": log_info["target_Q"].max(), "min_target_Q": log_info["target_Q"].min(),
         }
-        grads = jax.tree_map(functools.partial(jnp.mean, axis=0), grads)
-        log_info = jax.tree_map(functools.partial(jnp.mean, axis=0), log_info)
+        grads = jax.tree_util.tree_map(functools.partial(jnp.mean, axis=0), grads)
+        log_info = jax.tree_util.tree_map(functools.partial(jnp.mean, axis=0), log_info)
         log_info.update(extra_info)
         new_state = state.apply_gradients(grads=grads)
         return new_state, log_info
 
     def update(self, batch: Batch):
         self.state, log_info = self.train_step(batch, self.state, self.target_params)
-        self.target_params = target_update(self.state.params, self.target_params, self.tau)
+        self.target_params = self.state.params
         return log_info
 
     def save(self, fname: str, cnt: int):
