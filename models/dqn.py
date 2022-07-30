@@ -23,7 +23,7 @@ class QNetwork(nn.Module):
 
     def forward(self, observations):
         # normalize the observations
-        observations = (observations - 0.5) / 0.5
+        # observations = (observations - 0.5) / 0.5
         x = self.net(observations)
         q_values = self.out_layer(x)
         return q_values
@@ -40,6 +40,7 @@ class DQNAgent:
         self.tau = args.tau
         self.device = device
         self.update_step = args.update_step
+        self.huber = args.loss == "huber"
 
         # use per
         self.per = not args.no_per
@@ -57,12 +58,17 @@ class DQNAgent:
             next_Q = self.target_qnet(batch.next_observations).max(dim=1)[0]  # (256)
         target_Q = batch.rewards + self.gamma * batch.discounts * next_Q
         if self.per:
-            td_loss = F.smooth_l1_loss(Q, target_Q, reduction="none") * batch.weights
+            if self.huber:
+                td_loss = F.smooth_l1_loss(Q, target_Q, reduction="none") * batch.weights
+            else:
+                td_loss = torch.square(Q - target_Q) * batch.weights
             with torch.no_grad():
                 priority = torch.pow(torch.abs(Q - target_Q), self.per_alpha)
         else:
-            td_loss = F.smooth_l1_loss(Q, target_Q, reduction="none")
-        # td_loss = torch.square(Q - target_Q)
+            if self.huber:
+                td_loss = F.smooth_l1_loss(Q, target_Q, reduction="none")
+            else:
+                td_loss = torch.square(Q - target_Q)
         log_info = {
             "avg_Q": Q.mean().item(),
             "max_Q": Q.max().item(),
@@ -87,13 +93,14 @@ class DQNAgent:
         loss, log_info = self.loss_fn(batch)
         loss.backward()
         self.optimizer.step()
-        # if self.step % self.update_step == 0:
-        #     for param, target_param in zip(self.qnet.parameters(),
-        #             self.target_qnet.parameters()):
-        #         target_param.data.copy_(param.data)
 
-        for param, target_param in zip(self.qnet.parameters(), self.target_qnet.parameters()):
-            target_param.data.copy_(self.tau*param.data + (1.-self.tau)*target_param)
+        if self.step % self.update_step == 0:
+            for param, target_param in zip(self.qnet.parameters(),
+                    self.target_qnet.parameters()):
+                target_param.data.copy_(param.data)
+
+        # for param, target_param in zip(self.qnet.parameters(), self.target_qnet.parameters()):
+        #     target_param.data.copy_(self.tau*param.data + (1.-self.tau)*target_param)
         return log_info
 
     def save(self, fname):

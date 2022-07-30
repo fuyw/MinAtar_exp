@@ -37,19 +37,20 @@ def get_args():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--env_name", type=str, default="asterix")
-    parser.add_argument("--algo", type=str, default="ddqn")
+    parser.add_argument("--algo", type=str, default="dqn")
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--update_step", type=int, default=4)
     parser.add_argument("--warmup_timesteps", type=int, default=5000)
     parser.add_argument("--total_timesteps", type=int, default=int(1e6))
-    parser.add_argument("--eval_freq", type=int, default=int(1e4))
-    parser.add_argument("--ckpt_freq", type=int, default=int(5e4)) 
+    parser.add_argument("--eval_freq", type=int, default=int(2e4))
+    parser.add_argument("--ckpt_freq", type=int, default=int(1e4)) 
     parser.add_argument("--tau", type=float, default=0.05)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--buffer_size", type=int, default=int(1e6))
-    parser.add_argument("--no_per", action="store_true", default=False)
+    parser.add_argument("--no_per", action="store_true", default=True)
+    parser.add_argument("--loss", type=str, default="mse")
     args = parser.parse_args()
     return args
 
@@ -118,14 +119,15 @@ def run(args):
                 f"\tavg_batch_rewards: {batch.rewards.mean():.3f}, max_batch_rewards: {batch.rewards.max():.3f}, "
                 f"min_batch_rewards: {batch.rewards.min():.3f}\n"
                 f"\tact_counts: ({act_counts}), epsilon: {epsilon:.3f}\n"
-                f"\tavg_priority: {log_info['avg_priority']:.3f}, "
-                f"max_priority: {log_info['max_priority']:.3f}, "
-                f"min_priority: {log_info['min_priority']:.3f}\n"
+                # f"\tavg_priority: {log_info['avg_priority']:.3f}, "
+                # f"max_priority: {log_info['max_priority']:.3f}, "
+                # f"min_priority: {log_info['min_priority']:.3f}\n"
             )
             log_info.update({"step": t, "eval_reward": eval_reward})
             res.append(log_info)
-            if t % args.ckpt_freq == 0:
-                agent.save(f"saved_models/online/{args.env_name}/{args.algo}/{t//args.ckpt_freq}.ckpt")
+
+        if t >= int(9.5e5) and t % args.ckpt_freq == 0:
+            agent.save(f"saved_models/online/{args.env_name}/{args.algo}/{t//args.ckpt_freq}.ckpt")
 
         if done:
             obs = env.reset()
@@ -140,8 +142,8 @@ def run(args):
 
 if __name__ == "__main__":
     args = get_args()
-    # for env_name in ["breakout", "asterix", "freeway", "space_invaders", "seaquest"]:
-    for env_name in ["breakout", "freeway"]:
+    # for env_name in ["breakout", "freeway"]:
+    for env_name in ["freeway"]:
         args.env_name = env_name
         os.makedirs(f"saved_models/online/{args.env_name}/{args.algo}", exist_ok=True)
         os.makedirs(f"logs/online/{args.env_name}", exist_ok=True)
