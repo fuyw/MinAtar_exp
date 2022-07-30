@@ -37,14 +37,14 @@ def get_args():
     parser.add_argument("--algo", type=str, default="dqn")
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=2.5e-4)
+    parser.add_argument("--buffer_size", type=int, default=int(2e6))
     parser.add_argument("--warmup_timesteps", type=int, default=5000)
-    parser.add_argument("--total_timesteps", type=int, default=int(1e6))
-    parser.add_argument("--eval_freq", type=int, default=int(2e4))
-    parser.add_argument("--ckpt_freq", type=int, default=int(1e4))
+    parser.add_argument("--total_timesteps", type=int, default=int(2e6))
+    parser.add_argument("--eval_freq", type=int, default=int(4e4))
+    parser.add_argument("--ckpt_freq", type=int, default=int(2e4))
     parser.add_argument("--train_freq", type=int, default=4)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--buffer_size", type=int, default=int(1e6))
     args = parser.parse_args()
     return args
 
@@ -78,7 +78,7 @@ def run(args):
     res = []
     for t in trange(1, args.total_timesteps+1):
         # warmup
-        epsilon = linear_schedule(start_epsilon=1., end_epsilon=0.1, duration=args.total_timesteps, t=t)
+        epsilon = linear_schedule(start_epsilon=0.5, end_epsilon=0.05, duration=args.total_timesteps, t=t)
 
         # sample action
         if t <= args.warmup_timesteps:
@@ -89,7 +89,8 @@ def run(args):
             else:
                 action = agent.sample_action(obs)
         next_obs, reward, done, _ = env.step(action)
-        replay_buffer.add(obs, action, next_obs, reward, done)
+        replay_buffer.add(obs, action, reward, done)
+        # replay_buffer.add(obs, action, next_obs, reward, done)
         obs = next_obs
 
         # update the agent
@@ -119,7 +120,7 @@ def run(args):
             res.append(log_info)
 
         if (t >= int(9.5e5)) and (t % args.ckpt_freq == 0):
-            agent.save(f"saved_models/{args.env_name}/{args.algo}/{t//args.ckpt_freq}.ckpt")
+            agent.save(f"saved_models/{args.env_name}/dqn_{t//args.ckpt_freq}.ckpt")
 
         if done:
             obs = env.reset()
@@ -135,7 +136,7 @@ def run(args):
 if __name__ == "__main__":
     args = get_args()
     # for env_name in ["breakout", "asterix", "freeway", "space_invaders"]:
-    for env_name in ["breakout", "asterix"]:
+    for env_name in ["space_invaders"]:
         args.env_name = env_name
         os.makedirs(f"saved_models/{args.env_name}", exist_ok=True)
         os.makedirs(f"logs/{args.env_name}", exist_ok=True)
