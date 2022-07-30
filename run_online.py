@@ -1,4 +1,4 @@
-from utils import ReplayBuffer, linear_schedule
+from utils import ReplayBuffer, PrioritizedReplayBuffer, linear_schedule, get_logger
 from env_utils import MinAtarEnv
 import numpy as np
 import pandas as pd
@@ -6,7 +6,6 @@ import os
 import time
 import torch
 from tqdm import trange
-from utils import get_logger
 from models import DQNAgent, DDQNAgent
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -50,6 +49,7 @@ def get_args():
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--buffer_size", type=int, default=int(1e6))
+    parser.add_argument("--no_per", action="store_true", default=False)
     args = parser.parse_args()
     return args
 
@@ -72,15 +72,20 @@ def run(args):
     agent = ALGOS[args.algo](in_channels, act_dim, args, device)
 
     # initialize the replay buffer
-    replay_buffer = ReplayBuffer(obs_shape, args.buffer_size)
+    if args.no_per:
+        replay_buffer = ReplayBuffer(obs_shape, args.buffer_size)
+    else:
+        replay_buffer = PrioritizedReplayBuffer(obs_shape, args.buffer_size)
 
     # start training
     obs, done = env.reset(), False    # (4, 10, 10)
     res = []
     for t in trange(1, args.total_timesteps+1):
-        # warmup
-        epsilon = linear_schedule(start_epsilon=0.5, end_epsilon=0.05, duration=args.total_timesteps, t=t)
+        # epsilon exploration
+        epsilon = linear_schedule(start_epsilon=0.5, end_epsilon=0.05,
+                                  duration=args.total_timesteps, t=t)
 
+        # sample action
         if t <= args.warmup_timesteps:
             action = np.random.choice(act_dim)
         else:
@@ -88,13 +93,16 @@ def run(args):
                 action = np.random.choice(act_dim)
             else:
                 action = agent.sample_action(obs) 
-            # update the agent
-            batch = replay_buffer.sample(batch_size=args.batch_size)
-            log_info = agent.update(batch)
-
         next_obs, reward, done, _ = env.step(action)
         replay_buffer.add(obs, action, reward, done)
         obs = next_obs
+
+        # update the agent
+        if t > args.warmup_timesteps:
+            batch = replay_buffer.sample(batch_size=args.batch_size)
+            log_info = agent.update(batch)
+            if not args.no_per:
+                replay_buffer.update_priority(batch.idx, log_info["priority"])
 
         if t % args.eval_freq == 0:
             eval_reward, act_counts = eval_policy(agent, args.env_name) 
@@ -110,6 +118,9 @@ def run(args):
                 f"\tavg_batch_rewards: {batch.rewards.mean():.3f}, max_batch_rewards: {batch.rewards.max():.3f}, "
                 f"min_batch_rewards: {batch.rewards.min():.3f}\n"
                 f"\tact_counts: ({act_counts}), epsilon: {epsilon:.3f}\n"
+                f"\tavg_priority: {log_info['avg_priority']:.3f}, "
+                f"max_priority: {log_info['max_priority']:.3f}, "
+                f"min_priority: {log_info['min_priority']:.3f}\n"
             )
             log_info.update({"step": t, "eval_reward": eval_reward})
             res.append(log_info)
