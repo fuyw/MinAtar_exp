@@ -97,8 +97,8 @@ class DQNAgent:
 
     def update(self, batch: Batch):
         self.state, self.target_params, log_info = self.train_step(batch, self.state, self.target_params)
-        # self.target_params = self.state.params
         return log_info
 
     def save(self, fname: str, cnt: int):
-        checkpoints.save_checkpoint(fname, self.state, cnt, prefix="dqn", keep=20, overwrite=True)
+        checkpoints.save_checkpoint(fname, self.state, cnt, prefix="dqn_", keep=20,
+                                    overwrite=True)

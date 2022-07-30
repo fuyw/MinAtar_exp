@@ -91,7 +91,7 @@ def run(args):
                 f"min_loss: {log_info['min_loss']:.3f}\n"
                 f"\tavg_Q: {log_info['Q']:.3f}, max_Q: {log_info['max_Q']:.3f}, "
                 f"min_Q: {log_info['min_Q']:.3f}, "
-                f"\tavg_batch_discounts: {batch.discounts.mean():.3f}\n"
+                f"avg_batch_discounts: {batch.discounts.mean():.3f}\n"
                 f"\tavg_target_Q: {log_info['target_Q']:.3f}, max_target_Q: {log_info['max_target_Q']:.3f}, "
                 f"min_target_Q: {log_info['min_target_Q']:.3f}\n"
                 f"\tavg_batch_rewards: {batch.rewards.mean():.3f}, max_batch_rewards: {batch.rewards.max():.3f}, "
@@ -102,10 +102,11 @@ def run(args):
             res.append(log_info)
 
         # save agent
-        if t % (args.total_timesteps // 20) == 0:
-            agent.save("ckpts", t // (args.total_timesteps // 20))
+        if t >= (0.9*args.total_timesteps) and (t % args.ckpt_freq == 0):
+            agent.save("ckpts", t // args.ckpt_freq)
 
     # save logs
+    replay_buffer.save(f"datasets/{exp_name}")
     df = pd.DataFrame(res).set_index("step")
     df.to_csv(f"logs/{exp_name}.csv")
 
@@ -114,14 +115,14 @@ def get_args():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--env_name", default="PongNoFrameskip-v4")
-    parser.add_argument("--warmup_timesteps", type=int, default=int(5e3))
-    parser.add_argument("--total_timesteps", type=int, default=int(1e6))
+    parser.add_argument("--warmup_timesteps", type=int, default=int(1e4))
+    parser.add_argument("--total_timesteps", type=int, default=int(2e6))
     parser.add_argument("--eval_num", type=int, default=100)
-    parser.add_argument("--buffer_size", type=int, default=int(1e6))
-    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--ckpt_num", type=int, default=40)
+    parser.add_argument("--buffer_size", type=int, default=int(2e6))
+    parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--context_len", type=int, default=4)
     parser.add_argument("--lr", type=float, default=3e-4)
-    parser.add_argument("--update_step", type=int, default=4)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
     return args
@@ -130,6 +131,8 @@ def get_args():
 if __name__ == "__main__":
     os.makedirs("logs", exist_ok=True)
     os.makedirs("ckpts", exist_ok=True)
+    os.makedirs("datasets", exist_ok=True)
     args = get_args()
     args.eval_freq = args.total_timesteps // args.eval_num
+    args.ckpt_freq = args.total_timesteps // args.ckpt_num
     run(args)
