@@ -2,5 +2,6 @@
 __pycache__
 logs
 backup
+ckpts
 datasets
 saved_models
