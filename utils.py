@@ -1,232 +1,123 @@
-from typing import List
+from flax.core import FrozenDict
+import jax
 import logging
-import torch
-import collections
+import functools
 import numpy as np
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+from collections import deque, namedtuple
 
-
-Batch = collections.namedtuple(
+Experience = namedtuple(
+    "Experience",
+    ["observation", "action", "reward", "done"])
+Batch = namedtuple(
     "Batch",
-    ["observations", "actions", "rewards", "discounts", "next_observations"])
-PerBatch = collections.namedtuple(
-    "PerBatch", ["observations", "actions", "rewards", "discounts", "next_observations",
-                 "idx", "weights"])
+    ["observations", "actions", "rewards", "next_observations", "discounts"])
 
 
-# Buffer
 class ReplayBuffer:
-    def __init__(self,
-                 obs_shape: List[int],
-                 max_size: int = int(5e4)):
+    def __init__(self, max_size, obs_shape=(84, 84), context_len=4):
         self.max_size = max_size
-        self.ptr = 0
-        self.size = 0
-        self.observations = np.zeros((max_size, *obs_shape), dtype=np.float32)
-        self.actions = np.zeros((max_size, 1), dtype=np.int32)
-        self.rewards = np.zeros(max_size, dtype=np.float32)
-        self.discounts = np.zeros(max_size, dtype=np.float32)
+        self.obs_shape = obs_shape
+        self.context_len = context_len
 
-    def add(self,
-            observation: np.ndarray,
-            action: np.ndarray,
-            reward: float,
-            done: float):
-        self.observations[self.ptr] = observation
-        self.actions[self.ptr] = action
-        self.rewards[self.ptr] = reward
-        self.discounts[self.ptr] = 1 - done
-        self.ptr = (self.ptr + 1) % self.max_size
-        self.size = min(self.size + 1, self.max_size)
+        self.obs = np.zeros((self.max_size, ) + obs_shape, dtype="uint8")
+        self.action = np.zeros((self.max_size, ), dtype="int32")
+        self.reward = np.zeros((self.max_size, ), dtype="float32")
+        self.done = np.zeros((self.max_size, ), dtype="bool")
 
-    def sample(self, batch_size: int) -> Batch:
-        idx = np.random.randint(0, self.size-1, size=batch_size)
-        batch = Batch(observations=torch.Tensor(self.observations[idx]).to(device),
-                      actions=torch.LongTensor(self.actions[idx]).to(device),
-                      rewards=torch.Tensor(self.rewards[idx]).to(device),
-                      discounts=torch.Tensor(self.discounts[idx]).to(device),
-                      next_observations=torch.Tensor(self.observations[idx+1]).to(device))
-        return batch
+        self._curr_size = 0
+        self._curr_pos = 0
+        self._context = deque(maxlen=context_len - 1)
 
-    def save(self, fname: str):
-        np.savez(fname,
-                 observations=self.observations[:self.size],
-                 actions=self.actions[:self.size],
-                 rewards=self.rewards[:self.size],
-                 discounts=self.discounts[:self.size])
-
-
-
-# PER
-class SumTree:
-    """A sum tree data structure for storing replay priorities.
-
-    A sum tree is a complete binary tree whose leaves contain values called
-    priorities. Internal nodes maintain the sum of the priorities of all leaf
-    nodes in their subtree.
-
-    For max_size = 4, the tree may look like this:
-
-                       +---+
-                       |2.5|
-                       +-+-+
-                         |
-                 +-------+--------+
-                 |                |
-               +-+-+            +-+-+
-               |1.5|            |1.0|
-               +-+-+            +-+-+
-                 |                |
-            +----+----+      +----+----+
-            |         |      |         |
-          +-+-+     +-+-+  +-+-+     +-+-+
-          |0.5|     |1.0|  |0.5|     |0.5|
-          +---+     +---+  +---+     +---+
-
-    This is stored in a list of numpy arrays:
-    self.nodes = [ [2.5], [1.5, 1], [0.5, 1, 0.5, 0.5]  ]
-
-    For conciseness, we allocates arrays as powers of two, and pad the excess
-    elements with zero values.
-
-    This is similar to the usual array-based representation of a complete
-    binary tree, but it is little more user-friendly.
-
-    """
-
-    def __init__(self, max_size):
-        """Create the sum tree data structure.
-
-        Args:
-            max_size: int, the maximum number of elements that can be stored
-                in this data structure. 
+    def add(self, exp):
+        """append a new experience into replay memory
         """
+        if self._curr_size < self.max_size:
+            self._assign(self._curr_pos, exp)
+            self._curr_size += 1
+        else:
+            self._assign(self._curr_pos, exp)
+        self._curr_pos = (self._curr_pos + 1) % self.max_size
+        if exp.done:
+            self._context.clear()
+        else:
+            self._context.append(exp)
 
-        self.levels = [np.zeros(1)]
-        level_size = 1
-        while level_size < max_size:
-            level_size *= 2
-            self.levels.append(np.zeros(level_size))
+    def recent_obs(self):
+        """ maintain recent obs for training"""
+        lst = list(self._context)
+        obs = [np.zeros(self.obs_shape, dtype="uint8")] * \
+                    (self._context.maxlen - len(lst))
+        obs.extend([k.observation for k in lst])
+        return obs
 
-    # Batch binary search through sum tree
-    # Sample a priority between 0 and the max priority
-    # and then search the tree for the corresponding index
-    def sample(self, batch_size):
-        """Sample an element from the sum tree.
+    def sample(self, idx):
+        """ return obs, action, reward, isOver,
+            note that some frames in obs may be generated from last episode,
+            they should be removed from obs
+            """
+        obs = np.zeros(
+            (self.context_len + 1, ) + self.obs_shape, dtype=np.uint8)
+        obs_idx = np.arange(idx, idx + self.context_len + 1) % self._curr_size
 
-        Each element has probability p_i / sum_j p_j of being picked, where
-        p_i is the (positive) value associated with the node i.
+        # confirm that no frame was generated from last episode
+        has_last_episode = False
+        for k in range(self.context_len - 2, -1, -1):
+            to_check_idx = obs_idx[k]
+            if self.done[to_check_idx]:
+                has_last_episode = True
+                obs_idx = obs_idx[k + 1:]
+                obs[k + 1:] = self.obs[obs_idx]
+                break
 
-        Args:
-            batch_size: int, number of samples in each batch.
+        if not has_last_episode:
+            obs = self.obs[obs_idx]
+
+        real_idx = (idx + self.context_len - 1) % self._curr_size
+        action = self.action[real_idx]
+        reward = self.reward[real_idx]
+        done = self.done[real_idx]
+        return obs, reward, action, done
+
+    def __len__(self):
+        return self._curr_size
+
+    def size(self):
+        return self._curr_size
+
+    def _assign(self, pos, exp):
+        self.obs[pos] = exp.observation
+        self.action[pos] = exp.action
+        self.reward[pos] = exp.reward
+        self.done[pos] = exp.done
+
+    def sample_batch(self, batch_size):
+        """sample a batch from replay memory for training
         """
-        # with stratified sampling
-        # bounds = np.linspace(0., self.levels[0][0], batch_size + 1)
-        # assert len(bounds) == batch_size + 1
-        # segments = [(bounds[i], bounds[i+1]) for i in range(batch_size)]
-        # value = [np.random.uniform(x[0], x[1]) for x in segments]
+        batch_idx = np.random.randint(
+            self._curr_size - self.context_len - 1, size=batch_size)
+        batch_idx = (self._curr_pos + batch_idx) % self._curr_size
+        batch_exp = [self.sample(i) for i in batch_idx]
+        return self._process_batch(batch_exp)
 
-        # without stratified sampling
-        value = np.random.uniform(0, self.levels[0][0], size=batch_size)
-        ind = np.zeros(batch_size, dtype=int)
-        for nodes in self.levels[1:]:
-            ind *= 2
-            left_sum = nodes[ind]
-            is_greater = np.greater(value, left_sum)
+    def _process_batch(self, batch_exp):
+        obs = np.asarray([e[0] for e in batch_exp], dtype="uint8")
+        reward = np.asarray([e[1] for e in batch_exp], dtype="float32")
+        action = np.asarray([e[2] for e in batch_exp], dtype="int8")
+        done = np.asarray([e[3] for e in batch_exp], dtype="bool")
+        obs = np.moveaxis(obs, 1, -1)
+        return Batch(obs[:, :, :, :self.context_len],
+                     action,
+                     reward,
+                     obs[:, :, :, 1:],
+                     1.0 - done)
 
-            # If value > left_sum -> go right (+1), else go left (+0)
-            ind += is_greater
+@functools.partial(jax.jit)
+def target_update(params: FrozenDict, target_params: FrozenDict, tau: float) -> FrozenDict:
+    def _update(param: FrozenDict, target_param: FrozenDict):
+        return tau*param + (1-tau)*target_param
+    updated_params = jax.tree_util.tree_map(_update, params, target_params)
+    return updated_params
 
-            # IF we go right, we only need to consider the values in the right
-            # tree so we substract the sum of values in the left tree
-            value -= left_sum * is_greater
-        return ind
-
-    def set(self, ind, new_priority):
-        """Set the value of a leaf node and update internal nodes accordingly.
-
-        This operation takes O(log(max_size)).
-        Args:
-            ind: int, the index of the leaf node to be updated.
-            new_priority: float, the value which we assign to the node.
-        """
-        priority_diff = new_priority - self.levels[-1][ind]
-
-        for nodes in reversed(self.levels):
-            np.add.at(nodes, ind, priority_diff)
-            ind //= 2
-
-    def batch_set(self, ind, new_priority):
-        # Confirm we don't increment a node twice
-        ind, unique_ind = np.unique(ind, return_index=True)
-        priority_diff = new_priority[unique_ind] - self.levels[-1][ind]
-
-        for nodes in self.levels[::-1]:
-            np.add.at(nodes, ind, priority_diff)
-            ind //= 2
-
-
-class PrioritizedReplayBuffer:
-    def __init__(self,
-                 obs_shape: List[int],
-                 max_size: int = int(1e6),
-                 alpha: float = 0.6,
-                 beta: float = 0.4):
-        self.max_size = max_size
-        self.ptr = 0
-        self.size = 0
-        self.observations = np.zeros((max_size, *obs_shape), dtype=np.float32)
-        self.actions = np.zeros((max_size, 1), dtype=np.int32)
-        self.rewards = np.zeros(max_size, dtype=np.float32)
-        self.discounts = np.zeros(max_size, dtype=np.float32)
-
-        self.tree = SumTree(max_size)
-        self.max_priority = 1.0
-        self.beta = beta
-        self.delta = (1 - beta) / 1e6  # anneal the IS weight with 1e6 steps
-        self.alpha = alpha  # add priority ** alpha to the sum_tree
-
-    # add transition with default max_priroity
-    def add(self,
-            observation: np.ndarray,
-            action: np.ndarray,
-            reward: float,
-            done: float):
-        self.observations[self.ptr] = observation
-        self.actions[self.ptr] = action
-        self.rewards[self.ptr] = reward
-        self.discounts[self.ptr] = 1 - done
-        self.tree.set(self.ptr, self.max_priority)
-        self.ptr = (self.ptr + 1) % self.max_size
-        self.size = min(self.size + 1, self.max_size)
-
-    def sample(self, batch_size):
-        idx = self.tree.sample(batch_size)
-        idx %= self.size
-
-        # replace `last idx` with the `second last idx` for next_observation
-        last_idx_mask = (idx == self.size)
-        idx = idx * (1 - last_idx_mask) + last_idx_mask * (self.size - 1)
-
-        # importance sampling
-        weights = self.tree.levels[-1][idx] ** -self.beta
-        weights /= weights.max()
-
-        # Hack: 0.4 + 6e-7 * 1e6 = 1. Only used by PER.
-        self.beta = min(self.beta + self.delta, 1)
-        batch = PerBatch(observations=torch.Tensor(self.observations[idx]).to(device),
-                          actions=torch.LongTensor(self.actions[idx]).to(device),
-                          rewards=torch.Tensor(self.rewards[idx]).to(device),
-                          discounts=torch.Tensor(self.discounts[idx]).to(device),
-                          next_observations=torch.Tensor(self.observations[idx+1]).to(device),
-                          idx=idx,
-                          weights=torch.Tensor(weights).to(device))
-        return batch
-
-    def update_priority(self, ind, priority):
-        # update max priority
-        self.max_priority = max(priority.max(), self.max_priority)
-        self.tree.batch_set(ind, priority)
 
 
 # Exploration linear decay
