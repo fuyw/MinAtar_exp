@@ -36,9 +36,9 @@ def eval_policy(agent: DQNAgent,
 def get_args():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env_name", type=str, default="breakout")
-    parser.add_argument("--algo", type=str, default="dqn")
-    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--env_name", type=str, default="asterix")
+    parser.add_argument("--algo", type=str, default="ddqn")
+    parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--update_step", type=int, default=4)
     parser.add_argument("--warmup_timesteps", type=int, default=5000)
@@ -102,7 +102,7 @@ def run(args):
             batch = replay_buffer.sample(batch_size=args.batch_size)
             log_info = agent.update(batch)
             if not args.no_per:
-                replay_buffer.update_priority(batch.idx, log_info["priority"])
+                replay_buffer.update_priority(batch.idx, log_info["priority"].cpu().numpy())
 
         if t % args.eval_freq == 0:
             eval_reward, act_counts = eval_policy(agent, args.env_name) 
@@ -141,7 +141,7 @@ def run(args):
 if __name__ == "__main__":
     args = get_args()
     # for env_name in ["breakout", "asterix", "freeway", "space_invaders", "seaquest"]:
-    for env_name in ["asterix", "breakout"]:
+    for env_name in ["breakout", "freeway"]:
         args.env_name = env_name
         os.makedirs(f"saved_models/online/{args.env_name}/{args.algo}", exist_ok=True)
         os.makedirs(f"logs/online/{args.env_name}", exist_ok=True)

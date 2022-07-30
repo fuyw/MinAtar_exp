@@ -28,8 +28,9 @@ class QNetwork(nn.Module):
         q_values = self.out_layer(x)
         return q_values
 
+
 class DQNAgent:
-    def __init__(self, in_channels, act_dim, args, device, per=False, per_alpha=0.6):
+    def __init__(self, in_channels, act_dim, args, device, per_alpha=0.6):
         self.act_dim = act_dim
         self.qnet = QNetwork(in_channels, act_dim).to(device)
         self.target_qnet = copy.deepcopy(self.qnet)

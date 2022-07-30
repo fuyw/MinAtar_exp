@@ -1,6 +1,7 @@
 import copy
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -27,16 +28,20 @@ class QNetwork(nn.Module):
         q_values = self.out_layer(x)
         return q_values
 
+
 class DDQNAgent:
-    def __init__(self, in_channels, act_dim, args, device):
+    def __init__(self, in_channels, act_dim, args, device, per_alpha=0.6):
         self.act_dim = act_dim
         self.qnet = QNetwork(in_channels, act_dim).to(device)
         self.target_qnet = copy.deepcopy(self.qnet)
         self.optimizer = torch.optim.Adam(self.qnet.parameters(), lr=args.lr)
         self.step = 0
+        self.tau = args.tau
         self.gamma = args.gamma
         self.device = device
         self.update_step = args.update_step
+        self.per = not args.no_per
+        self.per_alpha = per_alpha
 
     def sample_action(self, obs):
         Qs = self.qnet(torch.tensor(obs[None]).to(self.device))
@@ -52,7 +57,15 @@ class DDQNAgent:
             target_next_Qs = self.target_qnet(batch.next_observations)  # (256, 6)
             next_Q = torch.gather(target_next_Qs, dim=1, index=next_actions).squeeze()  # (256,)
         target_Q = batch.rewards + self.gamma * batch.discounts * next_Q
-        td_loss = torch.square(Q - target_Q)
+        if self.per:
+            with torch.no_grad():
+                priority = torch.pow(torch.abs(Q - target_Q), self.per_alpha)
+            # td_loss = torch.square(Q - target_Q) * batch.weights
+            td_loss = F.smooth_l1_loss(Q, target_Q, reduction="none") * batch.weights
+        else:
+            # td_loss = torch.square(Q - target_Q)
+            td_loss = F.smooth_l1_loss(Q, target_Q, reduction="none")
+
         log_info = {
             "avg_Q": Q.mean().item(),
             "max_Q": Q.max().item(),
@@ -64,6 +77,11 @@ class DDQNAgent:
             "max_td_loss": td_loss.max().item(),
             "min_td_loss": td_loss.min().item(),
         }
+        if self.per:
+            log_info.update({"priority": priority,
+                             "avg_priority": priority.mean().item(),
+                             "max_priority": priority.max().item(),
+                             "min_priority": priority.min().item()})
         return td_loss.mean(), log_info
 
     def update(self, batch):
@@ -76,6 +94,9 @@ class DDQNAgent:
             for param, target_param in zip(self.qnet.parameters(),
                     self.target_qnet.parameters()):
                 target_param.data.copy_(param.data)
+
+        # for param, target_param in zip(self.qnet.parameters(), self.target_qnet.parameters()):
+        #     target_param.data.copy_(self.tau*param.data + (1.-self.tau)*target_param)
         return log_info
 
     def save(self, fname):

@@ -228,6 +228,12 @@ class PrioritizedReplayBuffer:
         self.max_priority = max(priority.max(), self.max_priority)
         self.tree.batch_set(ind, priority)
 
+    def save(self, fname: str):
+        np.savez(fname,
+                 observations=self.observations[:self.size],
+                 actions=self.actions[:self.size],
+                 rewards=self.rewards[:self.size],
+                 discounts=self.discounts[:self.size])
 
 # Exploration linear decay
 def linear_schedule(start_epsilon: float, end_epsilon: float, duration: int, t: int):
