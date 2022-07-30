@@ -73,9 +73,9 @@ def run(args):
     logger = get_logger(f"logs/{exp_name}.log")
 
     # create envs
-    env = gym.make(args.env)
+    env = gym.make(args.env_name)
     env = wrap_deepmind(env, dim=IMAGE_SIZE[0], framestack=False, obs_format="NCHW")
-    eval_env = gym.make(args.env)
+    eval_env = gym.make(args.env_name)
     eval_env = wrap_deepmind(eval_env, dim=IMAGE_SIZE[0], obs_format="NCHW", test=True)
 
     replay_buffer = ReplayBuffer(max_size=int(1e6))
@@ -93,7 +93,7 @@ def run(args):
         if t <= args.warmup_timesteps:
             action = np.random.choice(act_dim)
         else:
-            if np.random.random() < args.epsilon:
+            if np.random.random() < epsilon:
                 action = np.random.choice(act_dim)
             else:
                 context = replay_buffer.recent_obs()
@@ -142,15 +142,15 @@ def run(args):
 def get_args():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env", default="PongNoFrameskip-v4")
+    parser.add_argument("--env_name", default="PongNoFrameskip-v4")
     parser.add_argument("--warmup_timesteps", type=int, default=int(5e4))
     parser.add_argument("--total_timesteps", type=int, default=int(1e7))
+    parser.add_argument("--eval_freq", type=int, default=int(1e5))
     parser.add_argument("--buffer_size", type=int, default=int(1e6))
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--context_len", type=int, default=4)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--update_step", type=int, default=4)
-    parser.add_argument("--test_freq", type=int, default=100_000)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
     return args

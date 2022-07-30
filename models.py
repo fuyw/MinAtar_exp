@@ -95,7 +95,7 @@ class DQNAgent:
         return new_state, log_info
 
     def update(self, batch: Batch):
-        self.state, log_info = self.train_step(batch, self.state, self.target_params, self.per)
+        self.state, log_info = self.train_step(batch, self.state, self.target_params)
         self.target_params = target_update(self.state.params, self.target_params, self.tau)
         return log_info
 
