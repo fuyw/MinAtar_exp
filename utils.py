@@ -1,4 +1,5 @@
 from typing import List
+import logging
 import torch
 import collections
 import numpy as np
@@ -58,3 +59,14 @@ class ReplayBuffer:
 def linear_schedule(start_epsilon: float, end_epsilon: float, duration: int, t: int):
     slope = (end_epsilon - start_epsilon) / duration
     return max(slope * t + start_epsilon, end_epsilon)
+
+
+def get_logger(fname):
+    logging.basicConfig(level=logging.INFO,
+                        format='%(asctime)s - %(message)s',
+                        datefmt='%Y-%m-%d %H:%M:%S',
+                        filename=fname,
+                        filemode='w',
+                        force=True)
+    logger = logging.getLogger()
+    return logger
