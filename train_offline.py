@@ -1,4 +1,5 @@
 import os
+
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = ".3"
 
 import gym
@@ -11,7 +12,6 @@ from atari_wrappers import wrap_deepmind
 from utils import ReplayBuffer, get_logger
 from models import DQNAgent, BCAgent, CQLAgent, DQNBCAgent
 
-
 ALGOS = {"bc": BCAgent, "dqn": DQNAgent, "cql": CQLAgent, "dqnbc": DQNBCAgent}
 
 
@@ -22,8 +22,8 @@ def eval_policy(agent, env, eval_episodes=10):
     for _ in range(eval_episodes):
         obs, done = env.reset(), False  # (4, 84, 84)
         while not done:
-            action = agent.sample_action(
-                agent.state.params, np.moveaxis(obs, 0, -1)).item()
+            action = agent.sample_action(agent.state.params,
+                                         np.moveaxis(obs, 0, -1)).item()
             obs, reward, done, _ = env.step(action)
             act_counts[action] += 1
             avg_reward += reward
@@ -32,7 +32,7 @@ def eval_policy(agent, env, eval_episodes=10):
     return avg_reward, act_counts, time.time() - t1
 
 
-def train_and_evaluate(config: ml_collections.ConfigDict): 
+def train_and_evaluate(config: ml_collections.ConfigDict):
     start_time = time.time()
     timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
     exp_name = f"{config.algo}_s{config.seed}_{timestamp}"
@@ -40,15 +40,19 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
     ckpt_dir = f"{config.ckpt_dir}/offline/{config.env_name}/{exp_name}"
     eval_freq = config.total_timesteps // config.eval_num
     ckpt_freq = config.total_timesteps // config.ckpt_num
-    print('#'*len(exp_info) + f'\n{exp_info}\n' + '#'*len(exp_info))
+    print('#' * len(exp_info) + f'\n{exp_info}\n' + '#' * len(exp_info))
 
     # initialize logger
-    logger = get_logger(f"{config.log_dir}/offline/{config.env_name}/{exp_name}.log")
+    logger = get_logger(
+        f"{config.log_dir}/offline/{config.env_name}/{exp_name}.log")
     logger.info(f"Exp configurations:\n{config}")
 
     # create envs
     eval_env = gym.make(f"{config.env_name}NoFrameskip-v4")
-    eval_env = wrap_deepmind(eval_env, dim=config.image_size[0], obs_format="NCHW", test=True)
+    eval_env = wrap_deepmind(eval_env,
+                             dim=config.image_size[0],
+                             obs_format="NCHW",
+                             test=True)
 
     # initialize DQNAgent & Buffer
     act_dim = eval_env.action_space.n
@@ -58,7 +62,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
 
     # start training
     res = []
-    for t in trange(1, config.total_timesteps+1):
+    for t in trange(1, config.total_timesteps + 1):
         batch = replay_buffer.sample_batch(config.batch_size)
         log_info = agent.update(batch)
 
@@ -76,13 +80,16 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
                 # f"avg_batch_discounts: {batch.discounts.mean():.3f}\n"
                 # f"\tavg_target_Q: {log_info['avg_target_Q']:.3f}, max_target_Q: {log_info['max_target_Q']:.3f}, "
                 # f"min_target_Q: {log_info['min_target_Q']:.3f}\n"
-                f"\tact_counts: ({act_counts})"
-            )
-            log_info.update({"step": t, "eval_reward": eval_reward, "eval_time": eval_time})
+                f"\tact_counts: ({act_counts})")
+            log_info.update({
+                "step": t,
+                "eval_reward": eval_reward,
+                "eval_time": eval_time
+            })
             res.append(log_info)
 
         # save agent
-        if t >= (0.9*config.total_timesteps) and (t % ckpt_freq == 0):
+        if t >= (0.9 * config.total_timesteps) and (t % ckpt_freq == 0):
             agent.save(ckpt_dir, t // ckpt_freq)
 
     # save logs

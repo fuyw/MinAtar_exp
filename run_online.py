@@ -3,7 +3,6 @@ from ml_collections import config_flags
 import os
 import train_online
 
-
 config_flags.DEFINE_config_file("config", default="configs/atari_online.py")
 FLAGS = flags.FLAGS
 

@@ -3,7 +3,6 @@ from ml_collections import config_flags
 import os
 import train_offline
 
-
 config_flags.DEFINE_config_file("config", default="configs/atari_offline.py")
 FLAGS = flags.FLAGS
 

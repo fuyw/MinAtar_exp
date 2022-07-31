@@ -4,15 +4,15 @@ import logging
 import numpy as np
 from collections import deque, namedtuple
 
-Experience = namedtuple(
-    "Experience",
-    ["observation", "action", "reward", "done"])
+Experience = namedtuple("Experience",
+                        ["observation", "action", "reward", "done"])
 Batch = namedtuple(
     "Batch",
     ["observations", "actions", "rewards", "next_observations", "discounts"])
 
 
 class ReplayBuffer:
+
     def __init__(self, max_size, obs_shape=(84, 84), context_len=4):
         self.max_size = max_size
         self.obs_shape = obs_shape
@@ -54,8 +54,8 @@ class ReplayBuffer:
             note that some frames in obs may be generated from last episode,
             they should be removed from obs
             """
-        obs = np.zeros(
-            (self.context_len + 1, ) + self.obs_shape, dtype=np.uint8)
+        obs = np.zeros((self.context_len + 1, ) + self.obs_shape,
+                       dtype=np.uint8)
         obs_idx = np.arange(idx, idx + self.context_len + 1) % self._curr_size
 
         # confirm that no frame was generated from last episode
@@ -92,8 +92,8 @@ class ReplayBuffer:
     def sample_batch(self, batch_size):
         """sample a batch from replay memory for training
         """
-        batch_idx = np.random.randint(
-            self._curr_size - self.context_len - 1, size=batch_size)
+        batch_idx = np.random.randint(self._curr_size - self.context_len - 1,
+                                      size=batch_size)
         batch_idx = (self._curr_pos + batch_idx) % self._curr_size
         batch_exp = [self.sample(i) for i in batch_idx]
         return self._process_batch(batch_exp)
@@ -104,11 +104,8 @@ class ReplayBuffer:
         action = np.asarray([e[2] for e in batch_exp], dtype="int8")
         done = np.asarray([e[3] for e in batch_exp], dtype="bool")
         obs = np.moveaxis(obs, 1, -1)
-        return Batch(obs[:, :, :, :self.context_len],
-                     action,
-                     reward,
-                     obs[:, :, :, 1:],
-                     1.-done)
+        return Batch(obs[:, :, :, :self.context_len], action, reward,
+                     obs[:, :, :, 1:], 1. - done)
 
     def save(self, fname):
         np.savez(fname,
@@ -130,7 +127,8 @@ class ReplayBuffer:
 
 
 # Exploration linear decay
-def linear_schedule(start_epsilon: float, end_epsilon: float, duration: int, t: int):
+def linear_schedule(start_epsilon: float, end_epsilon: float, duration: int,
+                    t: int):
     slope = (end_epsilon - start_epsilon) / duration
     return max(slope * t + start_epsilon, end_epsilon)
 
@@ -147,8 +145,11 @@ def get_logger(fname):
     return logger
 
 
-def target_update(params: FrozenDict, target_params: FrozenDict, tau: float) -> FrozenDict:
+def target_update(params: FrozenDict, target_params: FrozenDict,
+                  tau: float) -> FrozenDict:
+
     def _update(param: FrozenDict, target_param: FrozenDict):
-        return tau*param + (1-tau)*target_param
+        return tau * param + (1 - tau) * target_param
+
     updated_params = jax.tree_util.tree_map(_update, params, target_params)
     return updated_params
