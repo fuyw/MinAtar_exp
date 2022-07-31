@@ -51,7 +51,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
 
     # initialize DQNAgent & Buffer
     act_dim = env.action_space.n
-    agent = DQNAgent(act_dim=act_dim, total_timesteps=config.total_timesteps)
+    agent = DQNAgent(act_dim=act_dim)
     replay_buffer = ReplayBuffer(max_size=config.buffer_size)
 
     # start training
@@ -59,7 +59,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
     obs = env.reset()
     for t in trange(1, config.total_timesteps+1):
         # greedy epsilon exploration
-        epsilon = linear_schedule(start_epsilon=0.5, end_epsilon=0.05,
+        epsilon = linear_schedule(start_epsilon=1.0, end_epsilon=0.01,
                                   duration=config.total_timesteps, t=t)
 
         # sample action

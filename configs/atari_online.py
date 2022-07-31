@@ -19,7 +19,7 @@ def get_config():
     # config.buffer_size = int(1e6)
 
     # Training parameters
-    config.lr = 2.5e-4
+    config.lr = 6.25e-5
     config.seed = 0
     config.tau = 0.005
     config.gamma = 0.99

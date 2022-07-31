@@ -8,19 +8,19 @@ import jax.numpy as jnp
 import optax
 from utils import Batch
 
-
+init_fn = nn.initializers.xavier_uniform()
 class QNetwork(nn.Module):
     act_dim: int
 
     def setup(self):
         self.conv1 = nn.Conv(features=32, kernel_size=(8, 8), strides=(4, 4),
-                             name="conv1", dtype=jnp.float32) 
+                             name="conv1", kernel_init=init_fn)
         self.conv2 = nn.Conv(features=64, kernel_size=(4, 4), strides=(2, 2),
-                             name="conv2", dtype=jnp.float32)
+                             name="conv2", kernel_init=init_fn)
         self.conv3 = nn.Conv(features=64, kernel_size=(3, 3), strides=(1, 1),
-                             name="conv3", dtype=jnp.float32)
-        self.fc_layer = nn.Dense(features=512, name="fc", dtype=jnp.float32)
-        self.out_layer = nn.Dense(features=self.act_dim, name="out", dtype=jnp.float32)
+                             name="conv3", kernel_init=init_fn)
+        self.fc_layer = nn.Dense(features=512, name="fc", kernel_init=init_fn)
+        self.out_layer = nn.Dense(features=self.act_dim, name="out", kernel_init=init_fn)
 
     def __call__(self, observation):
         x = observation.astype(jnp.float32) / 255.  # (84, 84, 4)
@@ -41,8 +41,7 @@ class DQNAgent:
                  gamma: float = 0.99,
                  lr: float = 3e-4,
                  seed: int = 42,
-                 target_update_freq: int = 1000,
-                 total_timesteps: int = int(2e6)):
+                 target_update_freq: int = 1000):
 
         self.obs_shape = obs_shape
         self.act_dim = act_dim
@@ -55,11 +54,9 @@ class DQNAgent:
         dummy_obs = jnp.ones(obs_shape)
         params = self.net.init(rng, dummy_obs)["params"]
         self.target_params = params
+        tx = optax.adam(learning_rate=lr, b1=0.9, b2=0.999, eps=1.5e-4)
         self.state = train_state.TrainState.create(
-            apply_fn=QNetwork.apply, params=params, tx=optax.adam(lr))
-        # lr = optax.linear_schedule(init_value=1e-2,
-        #                            end_value=1e-6,
-        #                            transition_steps=total_timesteps)
+            apply_fn=QNetwork.apply, params=params, tx=tx)
 
         self.cnt = 0
 
