@@ -21,29 +21,40 @@ def get_args():
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
     return args
-args = get_args()
-env = gym.make(args.env)
-env = wrap_deepmind(env, dim=IMAGE_SIZE[0], framestack=False, obs_format="NCHW")
-act_dim = env.action_space.n
-agent = DQNAgent(act_dim=act_dim)
-replay_buffer = ReplayBuffer(max_size=int(1e6))
-obs, done = env.reset(), False  # (84, 84)
-while not done:
-    # stack frames
-    context = replay_buffer.recent_obs()
-    context.append(obs)
-    context = np.stack(context, axis=-1)  # (84, 84, 4)
 
-    # sample action
-    action = agent.sample_action(agent.state.params, context).item()
 
-    # (84, 84), 0.0, False
-    next_obs, reward, done, _ = env.step(action)
-    replay_buffer.add(Experience(obs, action, reward, done))
+def check_rollout():
+    args = get_args()
+    env = gym.make(args.env)
+    env = wrap_deepmind(env, dim=IMAGE_SIZE[0], framestack=False, obs_format="NCHW")
+    act_dim = env.action_space.n
+    agent = DQNAgent(act_dim=act_dim)
+    replay_buffer = ReplayBuffer(max_size=int(1e6))
+    obs, done = env.reset(), False  # (84, 84)
+    while not done:
+        # stack frames
+        context = replay_buffer.recent_obs()
+        context.append(obs)
+        context = np.stack(context, axis=-1)  # (84, 84, 4)
 
-    # update obs
-    obs = next_obs
+        # sample action
+        action = agent.sample_action(agent.state.params, context).item()
 
-batch = replay_buffer.sample_batch(256)
-batch.observations
-A = agent.train_step(batch, agent.state, agent.target_params)
+        # (84, 84), 0.0, False
+        next_obs, reward, done, _ = env.step(action)
+        replay_buffer.add(Experience(obs, action, reward, done))
+
+        # update obs
+        obs = next_obs
+
+    batch = replay_buffer.sample_batch(256)
+    res = agent.train_step(batch, agent.state, agent.target_params)
+
+
+def check_buffer_ckpt():
+    dataset = np.load("datasets/dqn_s42_20220731_001114.npz")
+    print(f"observations.shape = {dataset['observations'].shape}")
+    print(f"actions.shape = {dataset['actions'].shape}")
+    print(f"rewards.shape = {dataset['rewards'].shape}")
+    print(f"dones.shape = {dataset['dones'].shape}")
+    print(f"ptr = {dataset['ptr']}")

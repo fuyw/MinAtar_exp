@@ -3,15 +3,13 @@ os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = ".3"
 
 import gym
 import time
+import ml_collections
 import numpy as np
 import pandas as pd
 from tqdm import trange
 from atari_wrappers import wrap_deepmind
 from utils import ReplayBuffer, Experience, get_logger, linear_schedule
 from models import DQNAgent
-
-# env params
-IMAGE_SIZE = (84, 84)
 
 
 def eval_policy(agent, env, eval_episodes=10):
@@ -26,36 +24,46 @@ def eval_policy(agent, env, eval_episodes=10):
             obs, reward, done, _ = env.step(action)
             act_counts[action] += 1
             avg_reward += reward
-
     avg_reward /= eval_episodes
     act_counts /= act_counts.sum()
-    eval_time = (time.time() - t1)/60
-    return avg_reward, act_counts, eval_time
+    return avg_reward, act_counts, time.time() - t1
 
 
-def run(args):
+def train_and_evaluate(config: ml_collections.ConfigDict): 
     start_time = time.time()
-    exp_name = f"dqn_{args.env_name}_s{args.seed}"
-    logger = get_logger(f"logs/{exp_name}.log")
+    timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
+    exp_name = f"dqn_s{config.seed}_{timestamp}"
+    exp_info = f'# Running experiment for: {exp_name}_{config.env_name} #'
+    ckpt_dir = f"{config.ckpt_dir}/{config.env_name}/{exp_name}"
+    eval_freq = config.total_timesteps // config.eval_num
+    ckpt_freq = config.total_timesteps // config.ckpt_num
+    print('#'*len(exp_info) + f'\n{exp_info}\n' + '#'*len(exp_info))
+
+    # initialize logger
+    logger = get_logger(f"{config.log_dir}/{config.env_name}/{exp_name}.log")
+    logger.info(f"Exp configurations:\n{config}")
 
     # create envs
-    env = gym.make(args.env_name)
-    env = wrap_deepmind(env, dim=IMAGE_SIZE[0], framestack=False, obs_format="NCHW")
-    eval_env = gym.make(args.env_name)
-    eval_env = wrap_deepmind(eval_env, dim=IMAGE_SIZE[0], obs_format="NCHW", test=True)
-    replay_buffer = ReplayBuffer(max_size=int(1e6))
+    env = gym.make(f"{config.env_name}NoFrameskip-v4")
+    env = wrap_deepmind(env, dim=config.image_size[0], framestack=False, obs_format="NCHW")
+    eval_env = gym.make(f"{config.env_name}NoFrameskip-v4")
+    eval_env = wrap_deepmind(eval_env, dim=config.image_size[0], obs_format="NCHW", test=True)
+
+    # initialize DQNAgent & Buffer
     act_dim = env.action_space.n
     agent = DQNAgent(act_dim=act_dim)
+    replay_buffer = ReplayBuffer(max_size=config.buffer_size)
 
+    # start training
     res = []
     obs = env.reset()
-    for t in trange(1, args.total_timesteps+1):
+    for t in trange(1, config.total_timesteps+1):
         # greedy epsilon exploration
         epsilon = linear_schedule(start_epsilon=0.5, end_epsilon=0.05,
-                                  duration=args.total_timesteps, t=t)
+                                  duration=config.total_timesteps, t=t)
 
         # sample action
-        if t <= args.warmup_timesteps:
+        if t <= config.warmup_timesteps:
             action = np.random.choice(act_dim)
         else:
             if np.random.random() < epsilon:
@@ -76,17 +84,17 @@ def run(args):
             obs = env.reset()
 
         # update the agent
-        if t > args.warmup_timesteps:
-            batch = replay_buffer.sample_batch(args.batch_size)
+        if t > config.warmup_timesteps:
+            batch = replay_buffer.sample_batch(config.batch_size)
             log_info = agent.update(batch)
 
         # evaluate agent
-        if t % args.eval_freq == 0:
+        if t % eval_freq == 0:
             eval_reward, act_counts, eval_time = eval_policy(agent, eval_env)
             act_counts = ", ".join([f"{i:.2f}" for i in act_counts])
             logger.info(
                 f"Step {t}: reward={eval_reward}, total_time={(time.time()-start_time)/60:.2f}min, "
-                f"eval_time: {eval_time:.2f}min\n"
+                f"eval_time: {eval_time:.0f}s\n"
                 f"\tavg_loss: {log_info['avg_loss']:.3f}, max_loss: {log_info['max_loss']:.3f}, "
                 f"min_loss: {log_info['min_loss']:.3f}\n"
                 f"\tavg_Q: {log_info['avg_Q']:.3f}, max_Q: {log_info['max_Q']:.3f}, "
@@ -102,37 +110,10 @@ def run(args):
             res.append(log_info)
 
         # save agent
-        if t >= (0.9*args.total_timesteps) and (t % args.ckpt_freq == 0):
-            agent.save("ckpts", t // args.ckpt_freq)
+        if t >= (0.9*config.total_timesteps) and (t % ckpt_freq == 0):
+            agent.save(ckpt_dir, t // ckpt_freq)
 
     # save logs
-    replay_buffer.save(f"datasets/{exp_name}")
+    replay_buffer.save(f"{config.dataset_dir}/{exp_name}")
     df = pd.DataFrame(res).set_index("step")
-    df.to_csv(f"logs/{exp_name}.csv")
-
-
-def get_args():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--env_name", default="PongNoFrameskip-v4")
-    parser.add_argument("--warmup_timesteps", type=int, default=int(1e4))
-    parser.add_argument("--total_timesteps", type=int, default=int(2e6))
-    parser.add_argument("--buffer_size", type=int, default=int(2e6))
-    parser.add_argument("--eval_num", type=int, default=100)
-    parser.add_argument("--ckpt_num", type=int, default=40)
-    parser.add_argument("--batch_size", type=int, default=64)
-    parser.add_argument("--context_len", type=int, default=4)
-    parser.add_argument("--lr", type=float, default=3e-4)
-    parser.add_argument("--seed", type=int, default=0)
-    args = parser.parse_args()
-    return args
-
-
-if __name__ == "__main__":
-    os.makedirs("logs", exist_ok=True)
-    os.makedirs("ckpts", exist_ok=True)
-    os.makedirs("datasets", exist_ok=True)
-    args = get_args()
-    args.eval_freq = args.total_timesteps // args.eval_num
-    args.ckpt_freq = args.total_timesteps // args.ckpt_num
-    run(args)
+    df.to_csv(f"logs/{config.env_name}/{exp_name}.csv")

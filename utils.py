@@ -115,7 +115,7 @@ class ReplayBuffer:
                  observations=self.obs,
                  actions=self.action,
                  rewards=self.reward,
-                 done=self.done,
+                 dones=self.done,
                  ptr=self._curr_size)
 
 
