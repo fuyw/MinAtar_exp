@@ -1,4 +1,3 @@
-
 import ml_collections
 
 
@@ -6,7 +5,7 @@ def get_config():
     config = ml_collections.ConfigDict()
 
     # Atari game
-    config.env_name = "Pong"
+    config.env_name = "Breakout"
     config.contex_len = 4
     config.image_size = (84, 84)
 
@@ -23,7 +22,7 @@ def get_config():
     config.batch_size = 32
 
     # Logging
-    config.ckpt_num = 20
+    config.ckpt_num = 40
     config.eval_num = 100
 
     # Dirs

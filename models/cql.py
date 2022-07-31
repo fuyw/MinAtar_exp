@@ -6,7 +6,7 @@ import functools
 import jax
 import jax.numpy as jnp
 import optax
-from utils import Batch, target_update
+from utils import Batch
 
 
 class QNetwork(nn.Module):
@@ -33,21 +33,20 @@ class QNetwork(nn.Module):
         return Qs
 
 
-class DQNAgent:
+class CQLAgent:
     def __init__(self,
                  obs_shape: Tuple[int] = (1, 84, 84, 4),
                  act_dim: int = 6,
                  tau: float = 0.005,
-                 gamma: float = 0.99,
                  lr: float = 3e-4,
-                 seed: int = 42,
-                 target_update_freq: int = 2500):
-
+                 gamma: float = 0.99,
+                 cql_alpha: float = 5.0,
+                 seed: int = 42):
         self.obs_shape = obs_shape
         self.act_dim = act_dim
         self.gamma = gamma
         self.tau = tau
-        self.target_update_freq = target_update_freq
+        self.cql_alpha = cql_alpha
 
         rng = jax.random.PRNGKey(seed)
         self.qnet = QNetwork(act_dim)
@@ -57,11 +56,6 @@ class DQNAgent:
         self.state = train_state.TrainState.create(
             apply_fn=QNetwork.apply, params=params, tx=optax.adam(lr))
         self.cnt = 0
-        # lr = optax.linear_schedule(init_value=0.0001,
-        #                            end_value=0.00001,
-        #                            transition_steps=total_steps,
-        #                            transition_begin=int(total_steps*0.25))
-        # optimizer = optax.adam(learning_rate=lr)
 
     @functools.partial(jax.jit, static_argnames=("self"))
     def sample_action(self, params: FrozenDict, observation: jnp.ndarray):
@@ -79,11 +73,15 @@ class DQNAgent:
             Q = jax.vmap(lambda q,a: q[a])(Qs, batch.actions)
             next_Q = self.qnet.apply({"params": target_params}, batch.next_observations).max(-1)
             target_Q = batch.rewards + self.gamma * batch.discounts * next_Q
-            loss = (Q - target_Q) ** 2
+            cql_loss = (jax.scipy.special.logsumexp(Qs, axis=1) - Q) * self.cql_alpha
+            td_loss = (Q - target_Q) ** 2
             log_info = {
-                "avg_loss": loss.mean(),
-                "max_loss": loss.max(),
-                "min_loss": loss.min(),
+                "avg_loss": td_loss.mean(),
+                "max_loss": td_loss.max(),
+                "min_loss": td_loss.min(),
+                "avg_cql_loss": cql_loss.mean(),
+                "max_cql_loss": cql_loss.max(),
+                "min_cql_loss": cql_loss.min(),
                 "avg_Q": Q.mean(),
                 "max_Q": Q.max(),
                 "min_Q": Q.min(),
@@ -91,22 +89,20 @@ class DQNAgent:
                 "max_target_Q": target_Q.max(),
                 "min_target_Q": target_Q.min(),
             }
-            return loss.mean(), log_info
+            total_loss = cql_loss.mean() + td_loss.mean()
+            return total_loss, log_info
         grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
         (_, log_info), grads = grad_fn(state.params)
         new_state = state.apply_gradients(grads=grads)
-        # new_target_params = target_update(new_state.params, target_params, self.tau)
-        # return new_state, new_target_params, log_info
         return new_state, log_info
 
     def update(self, batch: Batch):
         self.cnt += 1
-        # self.state, self.target_params, log_info = self.train_step(batch, self.state, self.target_params)
         self.state, log_info = self.train_step(batch, self.state, self.target_params)
         if self.cnt % 2500 == 0:
             self.target_params = self.state.params
         return log_info
 
     def save(self, fname: str, cnt: int):
-        checkpoints.save_checkpoint(fname, self.state, cnt, prefix="dqn_", keep=20,
+        checkpoints.save_checkpoint(fname, self.state, cnt, prefix="cql_", keep=20,
                                     overwrite=True)

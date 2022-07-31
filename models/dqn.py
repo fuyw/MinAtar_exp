@@ -6,7 +6,7 @@ import functools
 import jax
 import jax.numpy as jnp
 import optax
-from utils import Batch, target_update
+from utils import Batch
 
 
 class QNetwork(nn.Module):
@@ -50,22 +50,17 @@ class DQNAgent:
         self.target_update_freq = target_update_freq
 
         rng = jax.random.PRNGKey(seed)
-        self.qnet = QNetwork(act_dim)
+        self.net = QNetwork(act_dim)
         dummy_obs = jnp.ones(obs_shape)
-        params = self.qnet.init(rng, dummy_obs)["params"]
+        params = self.net.init(rng, dummy_obs)["params"]
         self.target_params = params
         self.state = train_state.TrainState.create(
             apply_fn=QNetwork.apply, params=params, tx=optax.adam(lr))
         self.cnt = 0
-        # lr = optax.linear_schedule(init_value=0.0001,
-        #                            end_value=0.00001,
-        #                            transition_steps=total_steps,
-        #                            transition_begin=int(total_steps*0.25))
-        # optimizer = optax.adam(learning_rate=lr)
 
     @functools.partial(jax.jit, static_argnames=("self"))
     def sample_action(self, params: FrozenDict, observation: jnp.ndarray):
-        Qs = self.qnet.apply({"params": params}, observation[None]) 
+        Qs = self.net.apply({"params": params}, observation[None]) 
         action = Qs.argmax()
         return action
 
@@ -75,9 +70,9 @@ class DQNAgent:
                    state: train_state.TrainState,
                    target_params: FrozenDict):
         def loss_fn(params):
-            Qs = self.qnet.apply({"params": params}, batch.observations)
+            Qs = self.net.apply({"params": params}, batch.observations)
             Q = jax.vmap(lambda q,a: q[a])(Qs, batch.actions)
-            next_Q = self.qnet.apply({"params": target_params}, batch.next_observations).max(-1)
+            next_Q = self.net.apply({"params": target_params}, batch.next_observations).max(-1)
             target_Q = batch.rewards + self.gamma * batch.discounts * next_Q
             loss = (Q - target_Q) ** 2
             log_info = {
@@ -95,13 +90,10 @@ class DQNAgent:
         grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
         (_, log_info), grads = grad_fn(state.params)
         new_state = state.apply_gradients(grads=grads)
-        # new_target_params = target_update(new_state.params, target_params, self.tau)
-        # return new_state, new_target_params, log_info
         return new_state, log_info
 
     def update(self, batch: Batch):
         self.cnt += 1
-        # self.state, self.target_params, log_info = self.train_step(batch, self.state, self.target_params)
         self.state, log_info = self.train_step(batch, self.state, self.target_params)
         if self.cnt % 2500 == 0:
             self.target_params = self.state.params

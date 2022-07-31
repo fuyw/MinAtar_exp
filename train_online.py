@@ -40,7 +40,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
     print('#'*len(exp_info) + f'\n{exp_info}\n' + '#'*len(exp_info))
 
     # initialize logger
-    logger = get_logger(f"{config.log_dir}/{config.env_name}/{exp_name}.log")
+    logger = get_logger(f"{config.log_dir}/online/{config.env_name}/{exp_name}.log")
     logger.info(f"Exp configurations:\n{config}")
 
     # create envs
@@ -110,10 +110,10 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
             res.append(log_info)
 
         # save agent
-        if t >= (0.9*config.total_timesteps) and (t % ckpt_freq == 0):
+        if t >= (0.8*config.total_timesteps) and (t % ckpt_freq == 0):
             agent.save(ckpt_dir, t // ckpt_freq)
 
     # save logs
-    replay_buffer.save(f"{config.dataset_dir}/{exp_name}")
+    replay_buffer.save(f"{config.dataset_dir}/{config.env_name}/{exp_name}")
     df = pd.DataFrame(res).set_index("step")
-    df.to_csv(f"logs/{config.env_name}/{exp_name}.csv")
+    df.to_csv(f"{config.log_dir}/online/{config.env_name}/{exp_name}.csv")

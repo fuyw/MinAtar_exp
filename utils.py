@@ -116,8 +116,17 @@ class ReplayBuffer:
                  actions=self.action,
                  rewards=self.reward,
                  dones=self.done,
-                 ptr=self._curr_size)
+                 curr_size=self._curr_size,
+                 curr_pos=self._curr_pos)
 
+    def load(self, fname):
+        dataset = np.load(fname)
+        self.obs = dataset["observations"]
+        self.actions = dataset["actions"]
+        self.rewards = dataset["rewards"]
+        self.dones = dataset["dones"]
+        self._curr_size = dataset["ptr"]
+        self.max_size = len(self.obs)
 
 # Exploration linear decay
 def linear_schedule(start_epsilon: float, end_epsilon: float, duration: int, t: int):
