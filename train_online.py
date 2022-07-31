@@ -34,7 +34,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
     timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
     exp_name = f"dqn_s{config.seed}_{timestamp}"
     exp_info = f'# Running experiment for: {exp_name}_{config.env_name} #'
-    ckpt_dir = f"{config.ckpt_dir}/{config.env_name}/{exp_name}"
+    ckpt_dir = f"{config.ckpt_dir}/online/{config.env_name}/{exp_name}"
     eval_freq = config.total_timesteps // config.eval_num
     ckpt_freq = config.total_timesteps // config.ckpt_num
     print('#'*len(exp_info) + f'\n{exp_info}\n' + '#'*len(exp_info))
@@ -51,7 +51,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
 
     # initialize DQNAgent & Buffer
     act_dim = env.action_space.n
-    agent = DQNAgent(act_dim=act_dim)
+    agent = DQNAgent(act_dim=act_dim, total_timesteps=config.total_timesteps)
     replay_buffer = ReplayBuffer(max_size=config.buffer_size)
 
     # start training
@@ -84,16 +84,16 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
             obs = env.reset()
 
         # update the agent
-        if t > config.warmup_timesteps:
+        if t > config.warmup_timesteps and t % config.update_freq == 0:
             batch = replay_buffer.sample_batch(config.batch_size)
             log_info = agent.update(batch)
 
         # evaluate agent
-        if t % eval_freq == 0:
+        if t > config.warmup_timesteps and t % eval_freq == 0:
             eval_reward, act_counts, eval_time = eval_policy(agent, eval_env)
             act_counts = ", ".join([f"{i:.2f}" for i in act_counts])
             logger.info(
-                f"Step {t}: reward={eval_reward}, total_time={(time.time()-start_time)/60:.2f}min, "
+                f"Step {t//1000}K: reward={eval_reward}, total_time={(time.time()-start_time)/60:.2f}min, "
                 f"eval_time: {eval_time:.0f}s\n"
                 f"\tavg_loss: {log_info['avg_loss']:.3f}, max_loss: {log_info['max_loss']:.3f}, "
                 f"min_loss: {log_info['min_loss']:.3f}\n"
@@ -104,7 +104,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
                 f"min_target_Q: {log_info['min_target_Q']:.3f}\n"
                 f"\tavg_batch_rewards: {batch.rewards.mean():.3f}, max_batch_rewards: {batch.rewards.max():.3f}, "
                 f"min_batch_rewards: {batch.rewards.min():.3f}\n"
-                f"\tact_counts: ({act_counts}), epsilon: {epsilon:.3f}\n"
+                f"\tact_counts: ({act_counts})\n"
+                f"\tcurr_size: {replay_buffer._curr_size}, curr_pos: {replay_buffer._curr_pos}, epsilon: {epsilon:.3f}\n"
             )
             log_info.update({"step": t, "eval_reward": eval_reward, "eval_time": eval_time})
             res.append(log_info)

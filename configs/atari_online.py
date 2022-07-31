@@ -10,16 +10,21 @@ def get_config():
     config.image_size = (84, 84)
 
     # General setting
-    config.warmup_timesteps = int(1e4)
-    config.total_timesteps = int(2e6)
-    config.buffer_size = int(2e6)
+    config.warmup_timesteps = int(2e4)
+    config.total_timesteps = int(1e7)
+    config.buffer_size = int(1e6)
+
+    # config.warmup_timesteps = int(1e3)
+    # config.total_timesteps = int(1e5)
+    # config.buffer_size = int(1e6)
 
     # Training parameters
-    config.lr = 3e-4
-    config.seed = 42
+    config.lr = 2.5e-4
+    config.seed = 0
     config.tau = 0.005
     config.gamma = 0.99
     config.batch_size = 32
+    config.update_freq = 4
 
     # Logging
     config.ckpt_num = 40

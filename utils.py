@@ -50,7 +50,7 @@ class ReplayBuffer:
         return obs
 
     def sample(self, idx):
-        """ return obs, action, reward, isOver,
+        """ return obs, action, reward, done,
             note that some frames in obs may be generated from last episode,
             they should be removed from obs
             """
@@ -127,6 +127,7 @@ class ReplayBuffer:
         self.dones = dataset["dones"]
         self._curr_size = dataset["ptr"]
         self.max_size = len(self.obs)
+
 
 # Exploration linear decay
 def linear_schedule(start_epsilon: float, end_epsilon: float, duration: int, t: int):

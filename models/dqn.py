@@ -41,7 +41,8 @@ class DQNAgent:
                  gamma: float = 0.99,
                  lr: float = 3e-4,
                  seed: int = 42,
-                 target_update_freq: int = 2500):
+                 target_update_freq: int = 1000,
+                 total_timesteps: int = int(2e6)):
 
         self.obs_shape = obs_shape
         self.act_dim = act_dim
@@ -56,6 +57,10 @@ class DQNAgent:
         self.target_params = params
         self.state = train_state.TrainState.create(
             apply_fn=QNetwork.apply, params=params, tx=optax.adam(lr))
+        # lr = optax.linear_schedule(init_value=1e-2,
+        #                            end_value=1e-6,
+        #                            transition_steps=total_timesteps)
+
         self.cnt = 0
 
     @functools.partial(jax.jit, static_argnames=("self"))
@@ -100,5 +105,7 @@ class DQNAgent:
         return log_info
 
     def save(self, fname: str, cnt: int):
-        checkpoints.save_checkpoint(fname, self.state, cnt, prefix="dqn_", keep=20,
-                                    overwrite=True)
+        checkpoints.save_checkpoint(fname, self.state, cnt, prefix="dqn_", keep=20, overwrite=True)
+
+    def load(self, fname: str, cnt: int):
+        checkpoints.restore_checkpoint(ckpt_dir=fname, target=self.state, step=cnt, prefix="dqn_")
