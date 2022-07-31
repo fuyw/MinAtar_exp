@@ -24,11 +24,8 @@ def get_args():
 args = get_args()
 env = gym.make(args.env)
 env = wrap_deepmind(env, dim=IMAGE_SIZE[0], framestack=False, obs_format="NCHW")
-
 act_dim = env.action_space.n
-
 agent = DQNAgent(act_dim=act_dim)
-
 replay_buffer = ReplayBuffer(max_size=int(1e6))
 obs, done = env.reset(), False  # (84, 84)
 while not done:
@@ -47,7 +44,6 @@ while not done:
     # update obs
     obs = next_obs
 
-
 batch = replay_buffer.sample_batch(256)
 batch.observations
-# grads, log_info = agent.train_step(batch, agent.state, agent.target_params)
+A = agent.train_step(batch, agent.state, agent.target_params)

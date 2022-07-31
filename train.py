@@ -20,13 +20,13 @@ def eval_policy(agent, env, eval_episodes=10):
     act_counts = np.zeros(env.action_space.n)
     for _ in range(eval_episodes):
         obs, done = env.reset(), False  # (4, 84, 84)
-        # while not env.get_real_done():
         while not done:
             action = agent.sample_action(
                 agent.state.params, np.moveaxis(obs, 0, -1)).item()
             obs, reward, done, _ = env.step(action)
             act_counts[action] += 1
             avg_reward += reward
+
     avg_reward /= eval_episodes
     act_counts /= act_counts.sum()
     eval_time = (time.time() - t1)/60
@@ -87,12 +87,12 @@ def run(args):
             logger.info(
                 f"Step {t}: reward={eval_reward}, total_time={(time.time()-start_time)/60:.2f}min, "
                 f"eval_time: {eval_time:.2f}min\n"
-                f"\tavg_loss: {log_info['loss']:.3f}, max_loss: {log_info['max_loss']:.3f}, "
+                f"\tavg_loss: {log_info['avg_loss']:.3f}, max_loss: {log_info['max_loss']:.3f}, "
                 f"min_loss: {log_info['min_loss']:.3f}\n"
-                f"\tavg_Q: {log_info['Q']:.3f}, max_Q: {log_info['max_Q']:.3f}, "
+                f"\tavg_Q: {log_info['avg_Q']:.3f}, max_Q: {log_info['max_Q']:.3f}, "
                 f"min_Q: {log_info['min_Q']:.3f}, "
                 f"avg_batch_discounts: {batch.discounts.mean():.3f}\n"
-                f"\tavg_target_Q: {log_info['target_Q']:.3f}, max_target_Q: {log_info['max_target_Q']:.3f}, "
+                f"\tavg_target_Q: {log_info['avg_target_Q']:.3f}, max_target_Q: {log_info['max_target_Q']:.3f}, "
                 f"min_target_Q: {log_info['min_target_Q']:.3f}\n"
                 f"\tavg_batch_rewards: {batch.rewards.mean():.3f}, max_batch_rewards: {batch.rewards.max():.3f}, "
                 f"min_batch_rewards: {batch.rewards.min():.3f}\n"
@@ -117,9 +117,9 @@ def get_args():
     parser.add_argument("--env_name", default="PongNoFrameskip-v4")
     parser.add_argument("--warmup_timesteps", type=int, default=int(1e4))
     parser.add_argument("--total_timesteps", type=int, default=int(2e6))
+    parser.add_argument("--buffer_size", type=int, default=int(2e6))
     parser.add_argument("--eval_num", type=int, default=100)
     parser.add_argument("--ckpt_num", type=int, default=40)
-    parser.add_argument("--buffer_size", type=int, default=int(2e6))
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--context_len", type=int, default=4)
     parser.add_argument("--lr", type=float, default=3e-4)

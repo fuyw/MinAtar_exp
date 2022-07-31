@@ -27,15 +27,15 @@ class QNetwork(nn.Module):
         x = nn.relu(self.conv1(x))                  # (21, 21, 32)
         x = nn.relu(self.conv2(x))                  # (11, 11, 64)
         x = nn.relu(self.conv3(x))                  # (11, 11, 64)
-        x = x.flatten()                             # (7744,)
+        x = x.reshape(len(observation), -1)         # (7744,)
         x = nn.relu(self.fc_layer(x))               # (512,)
-        Qs = self.out_layer(x)                        # (act_dim,)
+        Qs = self.out_layer(x)                      # (act_dim,)
         return Qs
 
 
 class DQNAgent:
     def __init__(self,
-                 obs_shape: Tuple[int] = (84, 84, 4),
+                 obs_shape: Tuple[int] = (1, 84, 84, 4),
                  act_dim: int = 6,
                  tau: float = 0.005,
                  gamma: float = 0.99,
@@ -60,7 +60,7 @@ class DQNAgent:
 
     @functools.partial(jax.jit, static_argnames=("self"))
     def sample_action(self, params: FrozenDict, observation: jnp.ndarray):
-        Qs = self.qnet.apply({"params": params}, observation) 
+        Qs = self.qnet.apply({"params": params}, observation[None]) 
         action = Qs.argmax()
         return action
 
@@ -69,34 +69,37 @@ class DQNAgent:
                    batch: Batch,
                    state: train_state.TrainState,
                    target_params: FrozenDict):
-        def loss_fn(params, observation, action, reward, next_observation, discount):
-            Q = self.qnet.apply({"params": params}, observation)[action]
-            next_Q = self.qnet.apply({"params": target_params}, next_observation).max()
-            target_Q = reward + self.gamma * discount * next_Q
+        def loss_fn(params):
+            Qs = self.qnet.apply({"params": params}, batch.observations)
+            Q = jax.vmap(lambda q,a: q[a])(Qs, batch.actions)
+            next_Q = self.qnet.apply({"params": target_params}, batch.next_observations).max(-1)
+            target_Q = batch.rewards + self.gamma * batch.discounts * next_Q
             loss = (Q - target_Q) ** 2
-            return loss, {"loss": loss, "Q": Q, "target_Q": target_Q}
-        grad_fn = jax.vmap(jax.value_and_grad(loss_fn, argnums=(0), has_aux=True),
-                           in_axes=(None, 0, 0, 0, 0, 0))
-        (_, log_info), grads = grad_fn(state.params,
-                                       batch.observations,
-                                       batch.actions,
-                                       batch.rewards,
-                                       batch.next_observations,
-                                       batch.discounts)
-        extra_info = {
-            "max_loss": log_info["loss"].max(), "min_loss": log_info["loss"].min(),
-            "max_Q": log_info["Q"].max(), "min_Q": log_info["Q"].min(),
-            "max_target_Q": log_info["target_Q"].max(), "min_target_Q": log_info["target_Q"].min(),
-        }
-        grads = jax.tree_util.tree_map(functools.partial(jnp.mean, axis=0), grads)
-        log_info = jax.tree_util.tree_map(functools.partial(jnp.mean, axis=0), log_info)
-        log_info.update(extra_info)
+            log_info = {
+                "avg_loss": loss.mean(),
+                "max_loss": loss.max(),
+                "min_loss": loss.min(),
+                "avg_Q": Q.mean(),
+                "max_Q": Q.max(),
+                "min_Q": Q.min(),
+                "avg_target_Q": target_Q.mean(),
+                "max_target_Q": target_Q.max(),
+                "min_target_Q": target_Q.min(),
+            }
+            return loss.mean(), log_info
+        grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+        (_, log_info), grads = grad_fn(state.params)
         new_state = state.apply_gradients(grads=grads)
-        new_target_params = target_update(new_state.params, target_params, self.tau)
-        return new_state, new_target_params, log_info
+        # new_target_params = target_update(new_state.params, target_params, self.tau)
+        # return new_state, new_target_params, log_info
+        return new_state, log_info
 
     def update(self, batch: Batch):
-        self.state, self.target_params, log_info = self.train_step(batch, self.state, self.target_params)
+        self.cnt += 1
+        # self.state, self.target_params, log_info = self.train_step(batch, self.state, self.target_params)
+        self.state, log_info = self.train_step(batch, self.state, self.target_params)
+        if self.cnt % 2500 == 0:
+            self.target_params = self.state.params
         return log_info
 
     def save(self, fname: str, cnt: int):
