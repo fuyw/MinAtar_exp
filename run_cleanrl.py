@@ -8,9 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from stable_baselines3.common.buffers import ReplayBuffer
 from tqdm import trange
-from atari_utils import create_atari_environment
 from utils import ReplayBuffer, Experience
 from atari_wrappers import wrap_deepmind
 
@@ -87,11 +85,11 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # env setup
-    # envs = gym.vector.SyncVectorEnv([make_env(args.env_id, args.seed, 0, args.capture_video, run_name)])
-    env = create_atari_environment(args.env_id)
-    act_dim = env.action_space.n
+    env = gym.make(f"BreakoutNoFrameskip-v4")
+    env = wrap_deepmind(env, dim=84, framestack=False, obs_format="NCHW")
     eval_env = gym.make(f"BreakoutNoFrameskip-v4")
     eval_env = wrap_deepmind(eval_env, dim=84, obs_format="NCHW", test=True)
+    act_dim = env.action_space.n
 
     q_network = QNetwork(act_dim).to(device)
     optimizer = optim.Adam(q_network.parameters(), lr=args.learning_rate)
@@ -100,7 +98,7 @@ if __name__ == "__main__":
 
     # start training
     replay_buffer = ReplayBuffer(max_size=args.buffer_size)
-    obs = env.reset().squeeze(-1)   # (84, 84, 1) ==> (84, 84)
+    obs = env.reset()   # (84, 84)
     for global_step in trange(1, 1+args.total_timesteps):
         epsilon = linear_schedule(
             args.start_e, args.end_e,
@@ -117,15 +115,16 @@ if __name__ == "__main__":
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, reward, done, _ = env.step(action)
         replay_buffer.add(Experience(obs, action, reward, done))
-        obs = next_obs.squeeze(-1)
-        if done: obs = env.reset().squeeze(-1)
+        obs = next_obs
+        if done:
+            obs = env.reset()
 
         # ALGO LOGIC: training.
         if global_step > args.learning_starts and global_step % args.train_frequency == 0:
             batch = replay_buffer.sample_batch(args.batch_size)
-            observations = torch.Tensor(np.moveaxis(batch.observations, -1, 1)).to(device)
+            observations = torch.Tensor(batch.observations).to(device)
             actions = torch.LongTensor(batch.actions).to(device)
-            next_observations = torch.Tensor(np.moveaxis(batch.next_observations, -1, 1)).to(device)
+            next_observations = torch.Tensor(batch.next_observations).to(device)
             rewards = torch.Tensor(batch.rewards).to(device)
             discounts = torch.Tensor(batch.discounts).to(device)
             with torch.no_grad():
@@ -146,5 +145,6 @@ if __name__ == "__main__":
         if global_step % args.eval_freq == 0:
             eval_reward, _, _ = eval_policy(q_network, eval_env)
             print(f"Eval at {global_step}: reward = {eval_reward:.1f}\n"
-                  f"\tavg_Q: {old_val.mean().item()}, avg_target_Q: {td_target.mean().item()}, "
-                  f"avg_loss: {loss.item()}")
+                  f"\tavg_Q: {old_val.mean().item():.2f}, "
+                  f"avg_target_Q: {td_target.mean().item():.2f}, "
+                  f"avg_loss: {loss.item():.3f}.")

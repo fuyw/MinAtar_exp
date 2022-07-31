@@ -1,5 +1,4 @@
 import os
-
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = ".3"
 
 import gym
@@ -47,15 +46,9 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
 
     # create envs
     env = gym.make(f"{config.env_name}NoFrameskip-v4")
-    env = wrap_deepmind(env,
-                        dim=config.image_size[0],
-                        framestack=False,
-                        obs_format="NCHW")
+    env = wrap_deepmind(env, dim=config.image_size[0], framestack=False, obs_format="NCHW")
     eval_env = gym.make(f"{config.env_name}NoFrameskip-v4")
-    eval_env = wrap_deepmind(eval_env,
-                             dim=config.image_size[0],
-                             obs_format="NCHW",
-                             test=True)
+    eval_env = wrap_deepmind(eval_env, dim=config.image_size[0], obs_format="NCHW", test=True)
 
     # initialize DQNAgent & Buffer
     act_dim = env.action_space.n
@@ -126,10 +119,11 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
             res.append(log_info)
 
         # save agent
-        if t >= (0.8 * config.total_timesteps) and (t % ckpt_freq == 0):
+        # if t >= (0.8 * config.total_timesteps) and (t % ckpt_freq == 0):
+        if t % ckpt_freq == 0:
             agent.save(ckpt_dir, t // ckpt_freq)
 
     # save logs
-    replay_buffer.save(f"{config.dataset_dir}/{config.env_name}/{exp_name}")
+    # replay_buffer.save(f"{config.dataset_dir}/{config.env_name}/{exp_name}")
     df = pd.DataFrame(res).set_index("step")
     df.to_csv(f"{config.log_dir}/online/{config.env_name}/{exp_name}.csv")

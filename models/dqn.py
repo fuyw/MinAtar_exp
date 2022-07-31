@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from utils import Batch
+import numpy as np
 
 init_fn = nn.initializers.xavier_uniform()
 class QNetwork(nn.Module):
@@ -41,7 +42,8 @@ class DQNAgent:
                  gamma: float = 0.99,
                  lr: float = 3e-4,
                  seed: int = 42,
-                 target_update_freq: int = 1000):
+                 target_update_freq: int = 1000,
+                 total_timesteps: int = int(1e7)):
 
         self.obs_shape = obs_shape
         self.act_dim = act_dim
@@ -54,9 +56,11 @@ class DQNAgent:
         dummy_obs = jnp.ones(obs_shape)
         params = self.net.init(rng, dummy_obs)["params"]
         self.target_params = params
-        tx = optax.adam(learning_rate=lr, b1=0.9, b2=0.999, eps=1.5e-4)
+        # tx = optax.adam(learning_rate=lr, b1=0.9, b2=0.999, eps=1.5e-4)
+        lr = optax.linear_schedule(init_value=1., end_value=1e-6,
+                                   transition_steps=total_timesteps)
         self.state = train_state.TrainState.create(
-            apply_fn=QNetwork.apply, params=params, tx=tx)
+            apply_fn=QNetwork.apply, params=params, tx=optax.adam(lr))
 
         self.cnt = 0
 
@@ -95,6 +99,8 @@ class DQNAgent:
         return new_state, log_info
 
     def update(self, batch: Batch):
+        batch.observations = np.moveaxis(batch.observations, 1, -1)
+        batch.next_observations = np.moveaxis(batch.next_observations, 1, -1)
         self.cnt += 1
         self.state, log_info = self.train_step(batch, self.state, self.target_params)
         if self.cnt % 2500 == 0:

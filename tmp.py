@@ -6,7 +6,7 @@ import gym
 import time
 import numpy as np
 from atari_wrappers import wrap_deepmind
-from utils import ReplayBuffer
+from utils import ReplayBuffer, Experience
 from models import DQNAgent
 
 IMAGE_SIZE = (84, 84)
@@ -84,7 +84,7 @@ def check_rollout():
         context = np.stack(context, axis=-1)  # (84, 84, 4)
 
         # sample action
-        action = agent.sample_action(agent.state.params, context).item()
+        action = agent.sample_action(agent.state.params, context).item()  # 3
 
         # (84, 84), 0.0, False
         next_obs, reward, done, _ = env.step(action)
@@ -137,3 +137,14 @@ def check_ckpts():
         agent.load(ckpt_dir, i)
         eval_reward, act_counts, eval_time = eval_policy(agent, env)
         print(f"ckpt {i}: {eval_reward:.2f}")
+
+
+def check_atari_utils():
+    from atari_utils import create_env
+    env = create_env("PongNoFrameskip-v4", stack_num=4, channel_last=False)
+    print(env.reset().shape)
+    obs, reward, done, _ = env.step(1)
+    print(obs.shape)
+    print(reward)
+    print(done)
+

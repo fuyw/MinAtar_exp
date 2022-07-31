@@ -212,4 +212,47 @@ class AtariPreprocessing:
                                        (self.screen_size, self.screen_size),
                                        interpolation=cv2.INTER_AREA)
         int_image = np.asarray(transformed_image, dtype=np.uint8)
-        return np.expand_dims(int_image, axis=2)
+        # return np.expand_dims(int_image, axis=2)
+        return int_image
+
+
+class FrameStack:
+    """Implements stacking of `num_frames` last frames of the game.
+    Wraps an AtariPreprocessing object.
+    """
+    def __init__(self,
+                 preproc: AtariPreprocessing,
+                 num_frames: int,
+                 channel_last: bool):
+        self.preproc = preproc
+        self.num_frames = num_frames
+        self.frames = collections.deque(maxlen=num_frames)
+        self.channel_last = channel_last
+
+    def reset(self):
+        ob = self.preproc.reset()
+        for _ in range(self.num_frames):
+            self.frames.append(ob)
+        return self._get_array()
+
+    def step(self, action: int):
+        ob, reward, done, info = self.preproc.step(action)
+        self.frames.append(ob)
+        return self._get_array(), reward, done, info
+
+    def _get_array(self):
+        assert len(self.frames) == self.num_frames
+        if self.channel_last:
+            array = np.stack(self.frames, axis=-1)
+        else:
+            array = np.stack(self.frames, axis=0)
+        return array
+
+
+def create_env(env_name, stack_num=None, channel_last=True):
+    env = gym.make(env_name)
+    env = env.env
+    env = AtariPreprocessing(env)
+    if stack_num is not None:
+        env = FrameStack(env, num_frames=stack_num, channel_last=channel_last)
+    return env
