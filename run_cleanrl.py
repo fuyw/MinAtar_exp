@@ -1,3 +1,4 @@
+import os
 import argparse
 import random
 import time
@@ -19,7 +20,7 @@ def parse_args():
 
     # Algorithm specific arguments
     parser.add_argument("--env-id", type=str, default="BreakoutNoFrameskip-v4")
-    parser.add_argument("--total-timesteps", type=int, default=int(1e7))
+    parser.add_argument("--total-timesteps", type=int, default=int(3e6))
     parser.add_argument("--learning-starts", type=int, default=int(8e4))
     parser.add_argument("--eval-freq", type=int, default=int(1e5))
 
@@ -76,6 +77,7 @@ def linear_schedule(start_e: float, end_e: float, duration: int, t: int):
 
 
 if __name__ == "__main__":
+    os.makedirs("ckpts", exist_ok=True)
     args = parse_args()
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)

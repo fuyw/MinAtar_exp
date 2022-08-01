@@ -21,7 +21,7 @@ from utils import Experience, ReplayBuffer, get_logger, linear_schedule
 # Utils Functions #
 ###################
 def eval_policy(apply_fn, state, env):
-    obs = env.reset()  # (4, 84, 84)
+    obs = env.reset()
     act_counts = np.zeros(env.action_space.n)
     while not env.get_real_done():
         action = sample(apply_fn, state.params, np.moveaxis(obs[None], 1, -1))
@@ -75,17 +75,18 @@ def get_args():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--env-name", type=str, default="Breakout")
     parser.add_argument("--buffer-size", type=int, default=int(1e6))
-    parser.add_argument("--total-timesteps", type=int, default=int(1e7))
+    parser.add_argument("--total-timesteps", type=int, default=int(5e6))
     parser.add_argument("--warmup-timesteps", type=int, default=int(5e4))
     parser.add_argument("--eval-num", type=int, default=100)
     parser.add_argument("--ckpt-num", type=int, default=10)
     parser.add_argument("--train-freq", type=int, default=4)
     parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--target_update_freq", type=int, default=1000)
     parser.add_argument("--batch-size", type=int, default=32)
     args = parser.parse_args()
     return args
+args = get_args()
 
 
 def run(args):
@@ -110,8 +111,10 @@ def run(args):
     rng = jax.random.PRNGKey(args.seed)
     q_network = QNetwork(act_dim)
     params = q_network.init(rng, jnp.ones(shape=(1, 84, 84, 4)))["params"]
-    state = train_state.TrainState.create(apply_fn=QNetwork.apply, params=params,
-                                          tx=optax.adam(args.lr))
+    lr = optax.linear_schedule(init_value=args.lr, end_value=1e-6,
+                               transition_steps=args.total_timesteps)
+    state = train_state.TrainState.create(apply_fn=q_network.apply, params=params,
+                                          tx=optax.adam(lr))
     target_params = params
 
     # create the replay buffer
@@ -157,7 +160,7 @@ def run(args):
                 context = replay_buffer.recent_obs()
                 context.append(obs)
                 context = np.stack(context, axis=-1)[None]
-                action = sample(q_network.apply, state.params, context).item()
+                action = sample(state.apply_fn, state.params, context).item()
         
         # interact with the environment
         next_obs, reward, done, _ = env.step(action)
@@ -174,7 +177,7 @@ def run(args):
                 target_params = state.params
         
         # evaluate the agent
-        if t % eval_freq == 0:
+        if (t > args.warmup_timesteps) and (t % eval_freq == 0):
             eval_reward, act_counts, eval_time = eval_policy(q_network.apply, state, eval_env)
             act_counts = ", ".join([f"{i:.2f}" for i in act_counts])
             print(f"Eval at {t}: reward = {eval_reward:.1f}, eval_time={eval_time:.1f}s\n"
@@ -186,8 +189,8 @@ def run(args):
                   f"min_target_Q: {log_info['min_target_Q']:.3f}\n"
                   f"\tavg_batch_rewards: {batch.rewards.mean():.3f}, max_batch_rewards: {batch.rewards.max():.3f}, "
                   f"min_batch_rewards: {batch.rewards.min():.3f}\n"
-                  f"avg_batch_discounts: {batch.discounts.mean():.3f}, "
-                  f"\tact_counts: ({act_counts})\n")            
+                  f"\tavg_batch_discounts: {batch.discounts.mean():.3f}, "
+                  f"act_counts: ({act_counts})\n")            
             logger.info(f"Eval at {t}: reward = {eval_reward:.1f}, eval_time={eval_time:.1f}s\n"
                         f"\tavg_loss: {log_info['avg_loss']:.3f}, max_loss: {log_info['max_loss']:.3f}, "
                         f"min_loss: {log_info['min_loss']:.3f}\n"
