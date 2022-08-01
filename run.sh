@@ -1,2 +1,2 @@
 sleep 3h
-python main.py --env_name="Breakout"
+python run_online_dqn.py --env_name="Breakout"

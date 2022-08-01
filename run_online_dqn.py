@@ -36,20 +36,16 @@ def eval_policy(apply_fn, state, env):
 #############
 # DQN Agent #
 #############
-# init_fn = nn.initializers.xavier_uniform()
-init_fn = nn.initializers.glorut_uniform()
+init_fn = nn.initializers.xavier_uniform()
 class QNetwork(nn.Module):
     act_dim: int
 
     def setup(self):
-        self.conv1 = nn.Conv(features=32, kernel_size=(8, 8), strides=(4, 4),
-                             name="conv1", kernel_init=init_fn)
-        self.conv2 = nn.Conv(features=64, kernel_size=(4, 4), strides=(2, 2),
-                             name="conv2", kernel_init=init_fn)
-        self.conv3 = nn.Conv(features=64, kernel_size=(3, 3), strides=(1, 1),
-                             name="conv3", kernel_init=init_fn)
-        self.fc_layer = nn.Dense(features=512, name="fc", kernel_init=init_fn)
-        self.out_layer = nn.Dense(features=self.act_dim, name="out", kernel_init=init_fn)
+        self.conv1 = nn.Conv(features=32, kernel_size=(8, 8), strides=(4, 4), name="conv1")
+        self.conv2 = nn.Conv(features=64, kernel_size=(4, 4), strides=(2, 2), name="conv2")
+        self.conv3 = nn.Conv(features=64, kernel_size=(3, 3), strides=(1, 1), name="conv3")
+        self.fc_layer = nn.Dense(features=512, name="fc")
+        self.out_layer = nn.Dense(features=self.act_dim, name="out")
 
     def __call__(self, observation):
         x = observation.astype(jnp.float32) / 255.  # (84, 84, 4)
@@ -101,7 +97,7 @@ def run(args):
     eval_freq = args.total_timesteps // args.eval_num
     ckpt_freq = args.total_timesteps // args.ckpt_num
     print('#' * len(exp_info) + f'\n{exp_info}\n' + '#' * len(exp_info))
-    logger = get_logger(f"logs/online/{args.env_name}/{exp_name}.log")
+    logger = get_logger(f"logs/{exp_name}.log")
 
     # make environments
     env = gym.make(f"{args.env_name}NoFrameskip-v4")
@@ -134,15 +130,15 @@ def run(args):
             Q = jax.vmap(lambda q,a: q[a])(Qs, batch.actions.reshape(-1, 1)).squeeze()
             loss = (Q - target_Q) ** 2
             log_info = {
-                "avg_Q": Q.mean().item(),
-                "min_Q": Q.min().item(),
-                "max_Q": Q.max().item(),
-                "avg_target_Q": target_Q.mean().item(),
-                "min_target_Q": target_Q.min().item(),
-                "max_target_Q": target_Q.max().item(),
-                "avg_loss": loss.mean().item(),
-                "max_loss": loss.max().item(),
-                "min_loss": loss.min().item(),
+                "avg_Q": Q.mean(),
+                "min_Q": Q.min(),
+                "max_Q": Q.max(),
+                "avg_target_Q": target_Q.mean(),
+                "min_target_Q": target_Q.min(),
+                "max_target_Q": target_Q.max(),
+                "avg_loss": loss.mean(),
+                "max_loss": loss.max(),
+                "min_loss": loss.min(),
             }
             return loss.mean(), log_info
         grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
@@ -155,7 +151,7 @@ def run(args):
     for t in trange(1, 1+args.total_timesteps):
         # select action
         epsilon = linear_schedule(1.0, 0.05, args.total_timesteps, t)
-        if t <= args.warmup_steps:
+        if t <= args.warmup_timesteps:
             action = np.random.choice(act_dim)
         else:
             if np.random.random() < epsilon:
@@ -174,7 +170,7 @@ def run(args):
             obs = env.reset()
         
         # update the agent
-        if (t > args.warmup_steps) and (t % args.train_freq == 0):
+        if (t > args.warmup_timesteps) and (t % args.train_freq == 0):
             batch = replay_buffer.sample_batch(args.batch_size)
             state, log_info = update_jit(state, target_params, batch)
             if t % args.target_update_freq == 0:
@@ -204,8 +200,8 @@ def run(args):
                         f"min_target_Q: {log_info['min_target_Q']:.3f}\n"
                         f"\tavg_batch_rewards: {batch.rewards.mean():.3f}, max_batch_rewards: {batch.rewards.max():.3f}, "
                         f"min_batch_rewards: {batch.rewards.min():.3f}\n"
-                        f"avg_batch_discounts: {batch.discounts.mean():.3f}, "
-                        f"\tact_counts: ({act_counts})\n")            
+                        f"\tavg_batch_discounts: {batch.discounts.mean():.3f}, "
+                        f"act_counts: ({act_counts})\n")            
 
         # save checkpoints
         if t % ckpt_freq == 0:
@@ -215,4 +211,6 @@ def run(args):
 
 if __name__ == "__main__":
     args = get_args()
+    os.makedirs("logs", exist_ok=True)
+    os.makedirs("ckpts", exist_ok=True)
     run(args)
