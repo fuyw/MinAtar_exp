@@ -2,12 +2,14 @@ import os
 
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = ".3"
 
-import gym
 import time
+
+import gym
 import numpy as np
-from atari_wrappers import wrap_deepmind
-from utils import ReplayBuffer, Experience
 from models import DQNAgent
+
+from atari_wrappers import wrap_deepmind
+from utils import Experience, ReplayBuffer
 
 IMAGE_SIZE = (84, 84)
 
@@ -99,6 +101,7 @@ def check_rollout():
 
 def check_buffer_ckpt():
     import numpy as np
+
     # dataset = np.load("datasets/Breakout/dqn_s42_20220731_030132.npz")
     dataset = np.load("datasets/Pong/dqn_s42_20220731_025637.npz")
     print(f"observations.shape = {dataset['observations'].shape}")
