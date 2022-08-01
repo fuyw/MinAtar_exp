@@ -16,7 +16,6 @@ from tqdm import trange
 from atari_wrappers import wrap_deepmind
 from utils import Experience, ReplayBuffer, get_logger, linear_schedule
 
-
 ###################
 # Utils Functions #
 ###################
@@ -31,6 +30,7 @@ def eval_policy(apply_fn, state, env):
         if done:
             obs = env.reset()
     act_counts /= act_counts.sum()
+    act_counts = ", ".join([f"{i:.2f}" for i in act_counts])
     return np.mean(env.get_eval_rewards()), act_counts, time.time() - t1
 
 

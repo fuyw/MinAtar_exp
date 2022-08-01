@@ -225,12 +225,6 @@ class ReplayBuffer:
                      next_observations=obs[:, :, :, 1:],
                      discounts=1.-done)
 
-        # return Batch(observations=obs[:, :self.context_len, :, :],
-        #              actions=action,
-        #              rewards=reward,
-        #              next_observations=obs[:, 1:, :, :],
-        #              discounts=1.-done)
-
     def save(self, fname):
         np.savez(fname,
                  observations=self.obs,
