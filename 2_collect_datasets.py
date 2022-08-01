@@ -14,7 +14,6 @@ from flax import linen as nn
 from flax.training import checkpoints, train_state
 from tqdm import tqdm
 
-from atari_utils import create_env, create_vec_env
 from atari_wrappers import wrap_deepmind
 from utils import Experience, ReplayBuffer
 
@@ -22,81 +21,27 @@ from utils import Experience, ReplayBuffer
 ###################
 # Utils Functions #
 ###################
-def eval_policy(apply_fn, state, env, channel_last=False):
+def eval_policy(apply_fn, state, env):
     t1 = time.time()
     obs = env.reset()
+    eval_step = 0
     act_counts = np.zeros(env.action_space.n)
     while not env.get_real_done():
-        if not channel_last:
-            obs = np.moveaxis(obs, 0, -1)
+        obs = np.moveaxis(obs, 0, -1)  # (4, 84, 84) ==> (84, 84, 4)
         action = sample(apply_fn, state.params, obs[None])
         act_counts[action] += 1
         obs, _, done, _ = env.step(action.item())
+        eval_step += 1
         if done:
             obs = env.reset()
     act_counts /= act_counts.sum()
     act_counts = ", ".join([f"{i:.2f}" for i in act_counts])
-    return np.mean(env.get_eval_rewards()), act_counts, time.time() - t1
-
-
-def new_eval_policy(apply_fn, state, env, eval_episodes=10):
-    t1 = time.time()
-    avg_reward = 0.
-    act_counts = np.zeros(env.preproc.action_space.n)
-    for _ in range(eval_episodes):
-        obs, done = env.reset(), False
-        while not done:
-            action = sample(apply_fn, state.params, obs[None]).item()
-            act_counts[action] += 1
-            obs, reward, done, _ = env.step(action)
-            avg_reward += reward
-    avg_reward /= eval_episodes
-    act_counts /= act_counts.sum()
-    act_counts = ", ".join([f"{i:.2f}" for i in act_counts])
-    return avg_reward, act_counts, time.time() - t1
-
-
-def eval_vecv(apply_fn, state, eval_envs, eval_episodes: int = 10):
-    """Evaluate with envpool vectorized environments."""
-    t1 = time.time()
-    act_counts = np.zeros(eval_envs.action_space[0].n)
-    n_envs = eval_envs.num_envs
-
-    # record episode reward and length
-    current_rewards = np.zeros(n_envs)
-    current_lengths = np.zeros(n_envs, dtype="int")
-    episode_rewards, episode_lengths = [], []
-    episode_counts = np.zeros(n_envs, dtype="int")
-
-    # evaluate `target` episodes for each environment
-    episode_count_targets = np.array([(eval_episodes + i) // n_envs
-                                      for i in range(n_envs)],
-                                     dtype="int")
-
-    # start evaluation
-    observations = eval_envs.reset()  # (10, 84, 84, 4)
-    while (episode_counts < episode_count_targets).any():  # 100_000
-        actions = sample(apply_fn, state.params, observations)  # (10,)
-        observations, rewards, dones, _ = eval_envs.step(np.asarray(actions))
-        current_rewards += rewards
-        current_lengths += 1
-        for i in range(n_envs):
-            act_counts[actions[i]] += 1
-            if episode_counts[i] < episode_count_targets[i]:
-                if dones[i]:
-                    episode_rewards.append(current_rewards[i])
-                    episode_lengths.append(current_lengths[i])
-                    episode_counts[i] += 1
-                    current_rewards[i] = 0
-                    current_lengths[i] = 0
-    avg_reward = np.mean(episode_rewards)
-    eval_step = np.sum(episode_lengths)
-    return avg_reward, eval_step, time.time() - t1
+    return np.mean(env.get_eval_rewards()), act_counts, eval_step, time.time() - t1
 
 
 def create_state(env):
     rng = jax.random.PRNGKey(0)
-    q_network = QNetwork(env.preproc.action_space.n)
+    q_network = QNetwork(env.action_space.n)
     params = q_network.init(rng, jnp.ones(shape=(1, 84, 84, 4)))["params"]
     state = train_state.TrainState.create(apply_fn=q_network.apply, params=params,
                                           tx=optax.adam(1e-3))
@@ -113,9 +58,9 @@ def load_states(env, steps=range(1, 5), verbose=False):
     if verbose:
         res = []
         for state in tqdm(states[1:], desc="[Eval ckpts]"):
-            eval_rewards, _, eval_time = eval_policy(state.apply_fn, state, env)
-            res.append((step, eval_rewards, eval_time))
-        res_df = pd.DataFrame(res, columns=["step", "eval_rwards", "eval_time"])
+            eval_rewards, _, eval_step, eval_time = eval_policy(state.apply_fn, state, env)
+            res.append((step, eval_rewards, eval_step, eval_time))
+        res_df = pd.DataFrame(res, columns=["step", "eval_rwards", "eval_step", "eval_time"])
         print(res_df)
     return states
 
@@ -183,27 +128,20 @@ def sample(apply_fn, params, observation):
 ########################
 eval_env = gym.make(f"BreakoutNoFrameskip-v4")
 eval_env = wrap_deepmind(eval_env, dim=84, obs_format="NCHW", test=True, test_episodes=3)
-
-new_env = create_env("BreakoutNoFrameskip-v4", stack_num=4, channel_last=True)
-states = load_states(new_env, steps=[1, 2, 3, 4, 8], verbose=False)
-new_eval_policy(states[-1].apply_fn, states[0], new_env, eval_episodes=10)
-
-
-eval_envs = create_vec_env("BreakoutNoFrameskip-v4", num_envs=10)
+states = load_states(eval_env, steps=[1, 2, 3, 4, 8])
 
 
 #######################
 # Collect transitions #
 #######################
-total_size = int(2e6)
-replay_buffer = ReplayBuffer(max_size=total_size)
+total_size = int(1.8e6)
 rollout_len = total_size // len(states)
+replay_buffer = ReplayBuffer(max_size=total_size)
 env = gym.make(f"BreakoutNoFrameskip-v4")
 env = wrap_deepmind(env, dim=84, framestack=False, obs_format="NCHW")
 
-for i in range(1, 5):
-    collect_trajectory(states[i], env, replay_buffer, rollout_len)
-
+for state in states:
+    collect_trajectory(state, env, replay_buffer, rollout_len)
 
 os.makedirs("datasets", exist_ok=True)
 replay_buffer.save("datasets/breakout")
