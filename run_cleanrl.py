@@ -149,4 +149,4 @@ if __name__ == "__main__":
                   f"\tact_counts: ({act_counts})\n")
 
         if global_step % (args.total_timesteps // 20) == 0:
-            torch.save(q_network.state_dict(), f"ckpt/dqn_{global_step % (args.total_timesteps // 20)}.pth")
+            torch.save(q_network.state_dict(), f"ckpts/dqn_{global_step % (args.total_timesteps // 20)}.pth")
