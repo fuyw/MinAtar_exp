@@ -21,6 +21,7 @@ from utils import Experience, ReplayBuffer, get_logger, linear_schedule
 # Utils Functions #
 ###################
 def eval_policy(apply_fn, state, env):
+    t1 = time.time()
     obs = env.reset()
     act_counts = np.zeros(env.action_space.n)
     while not env.get_real_done():
@@ -30,7 +31,7 @@ def eval_policy(apply_fn, state, env):
         if done:
             obs = env.reset()
     act_counts /= act_counts.sum()
-    return np.mean(env.get_eval_rewards()), act_counts, 0
+    return np.mean(env.get_eval_rewards()), act_counts, time.time() - t1
 
 
 #############
@@ -81,7 +82,8 @@ def get_args():
     parser.add_argument("--ckpt-num", type=int, default=10)
     parser.add_argument("--train-freq", type=int, default=4)
     parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--lr", type=float, default=3e-4)
+    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--explore_freq", type=float, default=0.1)
     parser.add_argument("--target_update_freq", type=int, default=1000)
     parser.add_argument("--batch-size", type=int, default=32)
     args = parser.parse_args()
@@ -111,10 +113,11 @@ def run(args):
     rng = jax.random.PRNGKey(args.seed)
     q_network = QNetwork(act_dim)
     params = q_network.init(rng, jnp.ones(shape=(1, 84, 84, 4)))["params"]
-    lr = optax.linear_schedule(init_value=args.lr, end_value=1e-6,
-                               transition_steps=args.total_timesteps)
+    lr_scheduler = optax.linear_schedule(init_value=args.lr, end_value=1e-6,
+                                         transition_steps=args.total_timesteps)
+    # state.opt_state[1].count
     state = train_state.TrainState.create(apply_fn=q_network.apply, params=params,
-                                          tx=optax.adam(lr))
+                                          tx=optax.adam(lr_scheduler))
     target_params = params
 
     # create the replay buffer
@@ -150,7 +153,7 @@ def run(args):
     obs = env.reset()   # (84, 84)
     for t in trange(1, 1+args.total_timesteps):
         # select action
-        epsilon = linear_schedule(1.0, 0.05, args.total_timesteps, t)
+        epsilon = linear_schedule(1.0, 0.05, args.explore_freq*args.total_timesteps, t)
         if t <= args.warmup_timesteps:
             action = np.random.choice(act_dim)
         else:
@@ -180,7 +183,7 @@ def run(args):
         if (t > args.warmup_timesteps) and (t % eval_freq == 0):
             eval_reward, act_counts, eval_time = eval_policy(q_network.apply, state, eval_env)
             act_counts = ", ".join([f"{i:.2f}" for i in act_counts])
-            print(f"Eval at {t}: reward = {eval_reward:.1f}, eval_time={eval_time:.1f}s\n"
+            print(f"Eval at {t//1000}K: reward = {eval_reward:.1f}, eval_time={eval_time:.1f}s, total_time={(time.time()-start_time)/60:.1f}min\n"
                   f"\tavg_loss: {log_info['avg_loss']:.3f}, max_loss: {log_info['max_loss']:.3f}, "
                   f"min_loss: {log_info['min_loss']:.3f}\n"
                   f"\tavg_Q: {log_info['avg_Q']:.3f}, max_Q: {log_info['max_Q']:.3f}, "
@@ -189,9 +192,9 @@ def run(args):
                   f"min_target_Q: {log_info['min_target_Q']:.3f}\n"
                   f"\tavg_batch_rewards: {batch.rewards.mean():.3f}, max_batch_rewards: {batch.rewards.max():.3f}, "
                   f"min_batch_rewards: {batch.rewards.min():.3f}\n"
-                  f"\tavg_batch_discounts: {batch.discounts.mean():.3f}, "
-                  f"act_counts: ({act_counts})\n")            
-            logger.info(f"Eval at {t}: reward = {eval_reward:.1f}, eval_time={eval_time:.1f}s\n"
+                  f"\tavg_batch_discounts: {batch.discounts.mean():.3f}, act_counts: ({act_counts})\n"
+                  f"\tlr={lr_scheduler(state.opt_state[1].count):.6f}, epsilon={epsilon:.6f}\n")
+            logger.info(f"Eval at {t//1000}K: reward = {eval_reward:.1f}, eval_time={eval_time:.1f}s, total_time={(time.time()-start_time)/60:.1f}min\n"
                         f"\tavg_loss: {log_info['avg_loss']:.3f}, max_loss: {log_info['max_loss']:.3f}, "
                         f"min_loss: {log_info['min_loss']:.3f}\n"
                         f"\tavg_Q: {log_info['avg_Q']:.3f}, max_Q: {log_info['max_Q']:.3f}, "
@@ -200,13 +203,12 @@ def run(args):
                         f"min_target_Q: {log_info['min_target_Q']:.3f}\n"
                         f"\tavg_batch_rewards: {batch.rewards.mean():.3f}, max_batch_rewards: {batch.rewards.max():.3f}, "
                         f"min_batch_rewards: {batch.rewards.min():.3f}\n"
-                        f"\tavg_batch_discounts: {batch.discounts.mean():.3f}, "
-                        f"act_counts: ({act_counts})\n")            
+                        f"\tavg_batch_discounts: {batch.discounts.mean():.3f}, act_counts: ({act_counts})\n"
+                        f"\tlr={lr_scheduler(state.opt_state[1].count):.6f}, epsilon={epsilon:.6f}\n")
 
         # save checkpoints
         if t % ckpt_freq == 0:
-            checkpoints.save_checkpoint("ckpts", state, t//ckpt_freq, prefix="dqn_breakout",
-                                        keep=20, overwrite=True)
+            checkpoints.save_checkpoint("ckpts", state, t//ckpt_freq, prefix="dqn_breakout", keep=20, overwrite=True)
 
 
 if __name__ == "__main__":

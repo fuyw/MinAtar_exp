@@ -2,7 +2,7 @@
 __pycache__
 logs
 backup
-ckpts
+*ckpts
 datasets
 saved_models
 PARL
