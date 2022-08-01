@@ -56,7 +56,7 @@ class QNetwork(nn.Module):
         return self.network(x / 255.0)
 
 
-def run_evaluate_episodes(agent, env):
+def eval_policy(agent, env):
     obs = env.reset()
     act_counts = np.zeros(env.action_space.n)
     while not env.get_real_done():
@@ -68,18 +68,6 @@ def run_evaluate_episodes(agent, env):
             obs = env.reset()
     act_counts /= act_counts.sum()
     return np.mean(env.get_eval_rewards()), act_counts, 0
-
-
-def eval_policy(qnet, env, eval_episodes=10):
-    t1 = time.time()
-    obs, done = env.reset(), False  # (4, 84, 84)
-    while not env.get_real_done():
-        logits = qnet(torch.Tensor(obs[None]).to(device))
-        action = logits.argmax(1).item()
-        obs, _, done, _ = env.step(action)
-        if done:
-            obs = env.reset()
-    return np.mean(env.get_eval_rewards()), _, _
 
 
 def linear_schedule(start_e: float, end_e: float, duration: int, t: int):
@@ -159,3 +147,6 @@ if __name__ == "__main__":
                   f"avg_target_Q: {td_target.mean().item():.2f}, "
                   f"avg_loss: {loss.item():.3f}\n"
                   f"\tact_counts: ({act_counts})\n")
+
+        if global_step % (args.total_timesteps // 20) == 0:
+            torch.save(q_network.state_dict(), f"ckpt/dqn_{global_step % (args.total_timesteps // 20)}.pth")
