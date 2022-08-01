@@ -217,12 +217,17 @@ class ReplayBuffer:
         reward = np.asarray([e[1] for e in batch_exp], dtype='float32')
         action = np.asarray([e[2] for e in batch_exp], dtype='int8')
         done = np.asarray([e[3] for e in batch_exp], dtype='bool')
-        # return [obs, action, reward, done]
-        return Batch(observations=obs[:, :self.context_len, :, :],
+        obs = np.moveaxis(obs, 1, -1)
+        return Batch(observations=obs[:, :, :, :self.context_len],
                      actions=action,
                      rewards=reward,
-                     next_observations=obs[:, 1:, :, :],
+                     next_observations=obs[:, :, :, 1:],
                      discounts=1.-done)
+        # return Batch(observations=obs[:, :self.context_len, :, :],
+        #              actions=action,
+        #              rewards=reward,
+        #              next_observations=obs[:, 1:, :, :],
+        #              discounts=1.-done)
 
     def save(self, fname):
         np.savez(fname,

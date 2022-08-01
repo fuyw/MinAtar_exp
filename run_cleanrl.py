@@ -56,21 +56,30 @@ class QNetwork(nn.Module):
         return self.network(x / 255.0)
 
 
+def run_evaluate_episodes(agent, env):
+    obs = env.reset()
+    act_counts = np.zeros(env.action_space.n)
+    while not env.get_real_done():
+        logits = agent(torch.Tensor(obs[None]).to(device))
+        action = logits.argmax(1).item()
+        act_counts[action] += 1
+        obs, _, done, _ = env.step(action)
+        if done:
+            obs = env.reset()
+    act_counts /= act_counts.sum()
+    return np.mean(env.get_eval_rewards()), act_counts, 0
+
+
 def eval_policy(qnet, env, eval_episodes=10):
     t1 = time.time()
-    avg_reward = 0.
-    act_counts = np.zeros(env.action_space.n)
-    for _ in range(eval_episodes):
-        obs, done = env.reset(), False  # (4, 84, 84)
-        while not done:
-            logits = qnet(torch.Tensor(obs[None]).to(device))
-            action = logits.argmax(1).item()
-            obs, reward, done, _ = env.step(action)
-            act_counts[action] += 1
-            avg_reward += reward
-    avg_reward /= eval_episodes
-    act_counts /= act_counts.sum()
-    return avg_reward, act_counts, time.time() - t1
+    obs, done = env.reset(), False  # (4, 84, 84)
+    while not env.get_real_done():
+        logits = qnet(torch.Tensor(obs[None]).to(device))
+        action = logits.argmax(1).item()
+        obs, _, done, _ = env.step(action)
+        if done:
+            obs = env.reset()
+    return np.mean(env.get_eval_rewards()), _, _
 
 
 def linear_schedule(start_e: float, end_e: float, duration: int, t: int):
@@ -143,8 +152,10 @@ if __name__ == "__main__":
                 target_network.load_state_dict(q_network.state_dict())
 
         if global_step % args.eval_freq == 0:
-            eval_reward, _, _ = eval_policy(q_network, eval_env)
+            eval_reward, act_counts, _ = eval_policy(q_network, eval_env)
+            act_counts = ", ".join([f"{i:.2f}" for i in act_counts])
             print(f"Eval at {global_step}: reward = {eval_reward:.1f}\n"
                   f"\tavg_Q: {old_val.mean().item():.2f}, "
                   f"avg_target_Q: {td_target.mean().item():.2f}, "
-                  f"avg_loss: {loss.item():.3f}.")
+                  f"avg_loss: {loss.item():.3f}\n"
+                  f"\tact_counts: ({act_counts})\n")

@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from utils import Batch
-import numpy as np
+
 
 init_fn = nn.initializers.xavier_uniform()
 class QNetwork(nn.Module):
@@ -75,11 +75,11 @@ class DQNAgent:
                    batch: Batch,
                    state: train_state.TrainState,
                    target_params: FrozenDict):
+        next_Q = self.net.apply({"params": target_params}, batch.next_observations).max(-1)
+        target_Q = batch.rewards + self.gamma * batch.discounts * next_Q
         def loss_fn(params):
             Qs = self.net.apply({"params": params}, batch.observations)
             Q = jax.vmap(lambda q,a: q[a])(Qs, batch.actions)
-            next_Q = self.net.apply({"params": target_params}, batch.next_observations).max(-1)
-            target_Q = batch.rewards + self.gamma * batch.discounts * next_Q
             loss = (Q - target_Q) ** 2
             log_info = {
                 "avg_loss": loss.mean(),
@@ -99,8 +99,6 @@ class DQNAgent:
         return new_state, log_info
 
     def update(self, batch: Batch):
-        batch.observations = np.moveaxis(batch.observations, 1, -1)
-        batch.next_observations = np.moveaxis(batch.next_observations, 1, -1)
         self.cnt += 1
         self.state, log_info = self.train_step(batch, self.state, self.target_params)
         if self.cnt % 2500 == 0:

@@ -12,7 +12,7 @@ from utils import ReplayBuffer, Experience, get_logger, linear_schedule
 from models import DQNAgent
 
 
-def eval_policy(agent, env, eval_episodes=10):
+def eval_policy_bug(agent, env, eval_episodes=10):
     t1 = time.time()
     avg_reward = 0.
     act_counts = np.zeros(env.action_space.n)
@@ -27,6 +27,21 @@ def eval_policy(agent, env, eval_episodes=10):
     avg_reward /= eval_episodes
     act_counts /= act_counts.sum()
     return avg_reward, act_counts, time.time() - t1
+
+
+def eval_policy(agent, env):
+    t1 = time.time()
+    act_counts = np.zeros(env.action_space.n)
+    obs = env.reset()
+    while not env.get_real_done():
+        action = agent.sample_action(agent.state.params,
+                                     np.moveaxis(obs, 0, -1)).item()
+        act_counts[action] += 1
+        obs, _, done, _ = env.step(action)
+        if done:
+            obs = env.reset()
+    act_counts /= act_counts.sum()
+    return np.mean(env.get_eval_rewards()), act_counts, time.time() - t1
 
 
 def train_and_evaluate(config: ml_collections.ConfigDict):
@@ -58,7 +73,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
     # start training
     res = []
     obs = env.reset()
-    for t in trange(1, config.total_timesteps + 1):
+    # for t in trange(1, config.total_timesteps + 1):
+    for t in trange(1, 2001):
         # greedy epsilon exploration
         epsilon = linear_schedule(start_epsilon=1.0,
                                   end_epsilon=0.01,
@@ -97,7 +113,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
             eval_reward, act_counts, eval_time = eval_policy(agent, eval_env)
             act_counts = ", ".join([f"{i:.2f}" for i in act_counts])
             logger.info(
-                f"Step {t//1000}K: reward={eval_reward}, total_time={(time.time()-start_time)/60:.2f}min, "
+                f"Step {t//1000}K: reward={eval_reward:.2f}, total_time={(time.time()-start_time)/60:.2f}min, "
                 f"eval_time: {eval_time:.0f}s\n"
                 f"\tavg_loss: {log_info['avg_loss']:.3f}, max_loss: {log_info['max_loss']:.3f}, "
                 f"min_loss: {log_info['min_loss']:.3f}\n"
@@ -111,6 +127,22 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
                 f"\tact_counts: ({act_counts})\n"
                 f"\tcurr_size: {replay_buffer._curr_size}, curr_pos: {replay_buffer._curr_pos}, epsilon: {epsilon:.3f}\n"
             )
+            print(
+                f"Step {t//1000}K: reward={eval_reward:.2f}, total_time={(time.time()-start_time)/60:.2f}min, "
+                f"eval_time: {eval_time:.0f}s\n"
+                f"\tavg_loss: {log_info['avg_loss']:.3f}, max_loss: {log_info['max_loss']:.3f}, "
+                f"min_loss: {log_info['min_loss']:.3f}\n"
+                f"\tavg_Q: {log_info['avg_Q']:.3f}, max_Q: {log_info['max_Q']:.3f}, "
+                f"min_Q: {log_info['min_Q']:.3f}, "
+                f"avg_batch_discounts: {batch.discounts.mean():.3f}\n"
+                f"\tavg_target_Q: {log_info['avg_target_Q']:.3f}, max_target_Q: {log_info['max_target_Q']:.3f}, "
+                f"min_target_Q: {log_info['min_target_Q']:.3f}\n"
+                f"\tavg_batch_rewards: {batch.rewards.mean():.3f}, max_batch_rewards: {batch.rewards.max():.3f}, "
+                f"min_batch_rewards: {batch.rewards.min():.3f}\n"
+                f"\tact_counts: ({act_counts})\n"
+                f"\tcurr_size: {replay_buffer._curr_size}, curr_pos: {replay_buffer._curr_pos}, epsilon: {epsilon:.3f}\n"
+            )
+
             log_info.update({
                 "step": t,
                 "eval_reward": eval_reward,

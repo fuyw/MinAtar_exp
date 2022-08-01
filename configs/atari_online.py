@@ -27,7 +27,7 @@ def get_config():
     config.update_freq = 4
 
     # Logging
-    config.ckpt_num = 40
+    config.ckpt_num = 2
     config.eval_num = 100
 
     # Dirs

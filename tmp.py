@@ -148,3 +148,11 @@ def check_atari_utils():
     print(reward)
     print(done)
 
+
+def check_agent_update(agent, batch, target_params):
+    import jax
+    next_Q = agent.net.apply({"params": agent.target_params}, batch.next_observations).max(-1)
+    target_Q = batch.rewards + agent.gamma * batch.discounts * next_Q
+    Qs = agent.net.apply({"params": agent.state.params}, batch.observations)
+    Q = jax.vmap(lambda q,a: q[a])(Qs, batch.actions)
+    loss=  (Q - target_Q) ** 2
